@@ -294,151 +294,153 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Payroll Inputs',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 16),
-            CustomDropdown<EmployeeModel>(
-              label: 'Employee',
-              value: _selectedEmployee,
-              items: provider.employees,
-              itemLabel: (employee) => '${employee.name} (${employee.id})',
-              onChanged: _selectEmployee,
-            ),
-            const SizedBox(height: 12),
-            CustomDropdown<String>(
-              label: 'Pay Frequency',
-              value: _payFrequency,
-              items: PayrollService.payPeriodsByFrequency.keys.toList(),
-              itemLabel: (value) => value,
-              onChanged: _setFrequency,
-            ),
-            const SizedBox(height: 12),
-            CustomTextField(
-              controller: _periodsController,
-              label: 'Number of Pay Periods',
-              keyboardType: TextInputType.number,
-              inputFormatters: [AppInputFormatters.digitsOnly],
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            _dateButton('Pay Period Start', _periodStart, (value) {
-              _periodStart = value;
-            }),
-            const SizedBox(height: 12),
-            _dateButton('Pay Period End', _periodEnd, (value) {
-              _periodEnd = value;
-            }),
-            const SizedBox(height: 12),
-            _dateButton('Pay Date', _payDate, (value) {
-              _payDate = value;
-            }),
-            const SizedBox(height: 12),
-            CustomTextField(
-              controller: _hoursController,
-              label: 'Total / Working Hours',
-              keyboardType: TextInputType.number,
-              inputFormatters: [AppInputFormatters.number],
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            CustomTextField(
-              controller: _rateController,
-              label: 'Hourly Rate',
-              keyboardType: TextInputType.number,
-              prefixText: r'$',
-              inputFormatters: [AppInputFormatters.number],
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            CustomDropdown<String>(
-              label: 'Other Taxable Income Type',
-              value: _otherTaxableType,
-              items: _taxableTypeOptions,
-              itemLabel: (value) => value,
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _otherTaxableType = value);
-              },
-            ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Payroll Inputs',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              CustomDropdown<EmployeeModel>(
+                label: 'Employee',
+                value: _selectedEmployee,
+                items: provider.employees,
+                itemLabel: (employee) => '${employee.name} (${employee.id})',
+                onChanged: _selectEmployee,
+              ),
+              const SizedBox(height: 12),
+              CustomDropdown<String>(
+                label: 'Pay Frequency',
+                value: _payFrequency,
+                items: PayrollService.payPeriodsByFrequency.keys.toList(),
+                itemLabel: (value) => value,
+                onChanged: _setFrequency,
+              ),
+              const SizedBox(height: 12),
+              CustomTextField(
+                controller: _periodsController,
+                label: 'Number of Pay Periods',
+                keyboardType: TextInputType.number,
+                inputFormatters: [AppInputFormatters.digitsOnly],
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              _dateButton('Pay Period Start', _periodStart, (value) {
+                _periodStart = value;
+              }),
+              const SizedBox(height: 12),
+              _dateButton('Pay Period End', _periodEnd, (value) {
+                _periodEnd = value;
+              }),
+              const SizedBox(height: 12),
+              _dateButton('Pay Date', _payDate, (value) {
+                _payDate = value;
+              }),
+              const SizedBox(height: 12),
+              CustomTextField(
+                controller: _hoursController,
+                label: 'Total / Working Hours',
+                keyboardType: TextInputType.number,
+                inputFormatters: [AppInputFormatters.number],
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              CustomTextField(
+                controller: _rateController,
+                label: 'Hourly Rate',
+                keyboardType: TextInputType.number,
+                prefixText: r'$',
+                inputFormatters: [AppInputFormatters.number],
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              CustomDropdown<String>(
+                label: 'Other Taxable Income Type',
+                value: _otherTaxableType,
+                items: _taxableTypeOptions,
+                itemLabel: (value) => value,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _otherTaxableType = value);
+                },
+              ),
 
-            const SizedBox(height: 12),
-            CustomTextField(
-              controller: _taxableController,
-              label: 'Other Taxable Income Amount',
-              keyboardType: TextInputType.number,
-              prefixText: r'$',
-              inputFormatters: [AppInputFormatters.number],
-              onChanged: (_) => setState(() {}),
-            ),
-            if (_otherTaxableType == 'Custom') ...[
               const SizedBox(height: 12),
               CustomTextField(
-                controller: _customTaxableTypeController,
-                label: 'Custom Taxable Income Type',
-                inputFormatters: [
-                  AppInputFormatters.textOnly,
-                  AppInputFormatters.capitalizeFirst,
-                ],
-                textCapitalization: TextCapitalization.words,
+                controller: _taxableController,
+                label: 'Other Taxable Income Amount',
+                keyboardType: TextInputType.number,
+                prefixText: r'$',
+                inputFormatters: [AppInputFormatters.number],
+                onChanged: (_) => setState(() {}),
               ),
-            ],
-            const SizedBox(height: 12),
-            CustomDropdown<String>(
-              label: 'Other Non-Taxable Deduction Reason',
-              value: _deductionReason,
-              items: const ['Arrears', 'Advance', 'Purchase', 'Other'],
-              itemLabel: (value) => value,
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _deductionReason = value);
-              },
-            ),
-            if (_deductionReason == 'Other') ...[
-              const SizedBox(height: 12),
-              CustomTextField(
-                controller: _otherReasonController,
-                label: 'Custom Reason',
-                inputFormatters: [
-                  AppInputFormatters.textOnly,
-                  AppInputFormatters.capitalizeFirst,
-                ],
-                textCapitalization: TextCapitalization.words,
-              ),
-            ],
-            const SizedBox(height: 12),
-            CustomTextField(
-              controller: _nonTaxableController,
-              label: 'Other Non-Taxable Deduction',
-              keyboardType: TextInputType.number,
-              prefixText: r'$',
-              inputFormatters: [AppInputFormatters.number],
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            CustomTextField(
-              controller: _nonTaxableNoteController,
-              label: 'Non-Taxable Deduction Note (Optional)',
-              inputFormatters: [
-                AppInputFormatters.sentenceText,
-                AppInputFormatters.capitalizeFirst,
+              if (_otherTaxableType == 'Custom') ...[
+                const SizedBox(height: 12),
+                CustomTextField(
+                  controller: _customTaxableTypeController,
+                  label: 'Custom Taxable Income Type',
+                  inputFormatters: [
+                    AppInputFormatters.textOnly,
+                    AppInputFormatters.capitalizeFirst,
+                  ],
+                  textCapitalization: TextCapitalization.words,
+                ),
               ],
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: _selectedEmployee == null ? null : _savePayroll,
-              icon: const Icon(Icons.save_outlined),
-              label: Text(
-                _editingPayrollId == null ? 'Save Payroll' : 'Update Payroll',
+              const SizedBox(height: 12),
+              CustomDropdown<String>(
+                label: 'Other Non-Taxable Deduction Reason',
+                value: _deductionReason,
+                items: const ['Arrears', 'Advance', 'Purchase', 'Other'],
+                itemLabel: (value) => value,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _deductionReason = value);
+                },
               ),
-            ),
-          ],
+              if (_deductionReason == 'Other') ...[
+                const SizedBox(height: 12),
+                CustomTextField(
+                  controller: _otherReasonController,
+                  label: 'Custom Reason',
+                  inputFormatters: [
+                    AppInputFormatters.textOnly,
+                    AppInputFormatters.capitalizeFirst,
+                  ],
+                  textCapitalization: TextCapitalization.words,
+                ),
+              ],
+              const SizedBox(height: 12),
+              CustomTextField(
+                controller: _nonTaxableController,
+                label: 'Other Non-Taxable Deduction',
+                keyboardType: TextInputType.number,
+                prefixText: r'$',
+                inputFormatters: [AppInputFormatters.number],
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              CustomTextField(
+                controller: _nonTaxableNoteController,
+                label: 'Non-Taxable Deduction Note (Optional)',
+                inputFormatters: [
+                  AppInputFormatters.sentenceText,
+                  AppInputFormatters.capitalizeFirst,
+                ],
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: _selectedEmployee == null ? null : _savePayroll,
+                icon: const Icon(Icons.save_outlined),
+                label: Text(
+                  _editingPayrollId == null ? 'Save Payroll' : 'Update Payroll',
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

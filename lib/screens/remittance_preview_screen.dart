@@ -33,6 +33,7 @@ class RemittancePreviewScreen extends StatelessWidget {
           SizedBox(
             width: 320,
             child: ListView(
+              scrollDirection: Axis.vertical,
               padding: const EdgeInsets.all(20),
               children: [
                 Text(
