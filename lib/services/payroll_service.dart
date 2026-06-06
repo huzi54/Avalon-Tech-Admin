@@ -162,6 +162,8 @@ class PayrollService {
     required double hours,
     required DateTime payPeriodStart,
     required DateTime payPeriodEnd,
+    String? id,
+    DateTime? createdAt,
     DateTime? payDate,
     String payFrequency = 'Biweekly',
     int? numberOfPayPeriods,
@@ -181,7 +183,7 @@ class PayrollService {
     );
 
     return PayrollModel(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       employeeId: employee.id,
       employeeName: employee.name,
       hours: hours,
@@ -203,7 +205,7 @@ class PayrollService {
       finalPayableAmount: result.finalPayableAmount,
       payPeriodStart: payPeriodStart,
       payPeriodEnd: payPeriodEnd,
-      createdAt: DateTime.now(),
+      createdAt: createdAt ?? DateTime.now(),
       payDate: payDate,
       payFrequency: payFrequency,
       numberOfPayPeriods: periods,

@@ -6,6 +6,7 @@ import '../models/payroll_model.dart';
 import '../providers/employee_provider.dart';
 import '../providers/payroll_provider.dart';
 import '../services/payroll_service.dart';
+import '../utils/app_input_formatters.dart';
 import '../utils/date_time_helper.dart';
 import '../utils/responsive.dart';
 import '../widgets/custom_dropdown.dart';
@@ -14,16 +15,23 @@ import '../widgets/payroll_table.dart';
 import 'pay_slip_preview_screen.dart';
 
 class SalaryCalculatorArgs {
-  const SalaryCalculatorArgs({required this.employeeId, this.hours});
+  const SalaryCalculatorArgs({
+    required this.employeeId,
+    this.hours,
+    this.payrollId,
+  });
 
   final String employeeId;
   final double? hours;
+  final String? payrollId;
 }
 
 class SalaryCalculatorScreen extends StatefulWidget {
-  const SalaryCalculatorScreen({super.key});
+  const SalaryCalculatorScreen({this.initialArgs, super.key});
 
   static const routeName = '/salary-calculator';
+
+  final SalaryCalculatorArgs? initialArgs;
 
   @override
   State<SalaryCalculatorScreen> createState() => _SalaryCalculatorScreenState();
@@ -34,13 +42,16 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   final _rateController = TextEditingController();
   final _periodsController = TextEditingController(text: '26');
   final _taxableController = TextEditingController(text: '0.00');
+  final _customTaxableTypeController = TextEditingController();
   final _nonTaxableController = TextEditingController(text: '0.00');
   final _otherReasonController = TextEditingController();
   final _nonTaxableNoteController = TextEditingController();
 
   EmployeeModel? _selectedEmployee;
   String _payFrequency = 'Biweekly';
+  String _otherTaxableType = 'Vacation Pay';
   String _deductionReason = 'Advance';
+  String? _editingPayrollId;
   DateTime _periodStart = DateTime(
     DateTime.now().year,
     DateTime.now().month,
@@ -50,6 +61,13 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   DateTime _payDate = DateTime.now();
   bool _handledArgs = false;
 
+  static const _taxableTypeOptions = [
+    'Vacation Pay',
+    'Bonus',
+    'Pay Back',
+    'Custom',
+  ];
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -57,14 +75,43 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
     _handledArgs = true;
 
     final employees = context.read<EmployeeProvider>().employees;
-    final args = ModalRoute.of(context)?.settings.arguments;
+    final args =
+        widget.initialArgs ?? ModalRoute.of(context)?.settings.arguments;
     if (args is SalaryCalculatorArgs) {
       final employee = context.read<EmployeeProvider>().findById(
         args.employeeId,
       );
       _selectEmployee(employee);
-      if (args.hours != null) {
-        _hoursController.text = args.hours!.toStringAsFixed(2);
+      _editingPayrollId = args.payrollId;
+      final payroll = args.payrollId == null
+          ? null
+          : context
+                .read<PayrollProvider>()
+                .payrolls
+                .where((item) => item.id == args.payrollId)
+                .firstOrNull;
+      if (payroll != null) {
+        _hoursController.text = payroll.hours.toStringAsFixed(2);
+        _rateController.text = payroll.rate.toStringAsFixed(2);
+        _periodsController.text = payroll.numberOfPayPeriods.toString();
+        _taxableController.text = payroll.otherTaxableIncome.toStringAsFixed(2);
+        _nonTaxableController.text = payroll.otherNonTaxableDeduction
+            .toStringAsFixed(2);
+        _periodStart = payroll.payPeriodStart;
+        _periodEnd = payroll.payPeriodEnd;
+        _payDate = payroll.payDate ?? payroll.payPeriodEnd;
+        _payFrequency = payroll.payFrequency;
+        _deductionReason = payroll.nonTaxableDeductionReason ?? 'Advance';
+        _nonTaxableNoteController.text = payroll.nonTaxableDeductionNote ?? '';
+        final label = context.read<PayrollProvider>().otherTaxableLabel(
+          payroll.id,
+        );
+        if (_taxableTypeOptions.contains(label)) {
+          _otherTaxableType = label;
+        } else {
+          _otherTaxableType = 'Custom';
+          _customTaxableTypeController.text = label;
+        }
       }
     } else if (employees.isNotEmpty) {
       _selectEmployee(employees.first);
@@ -77,6 +124,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
     _rateController.dispose();
     _periodsController.dispose();
     _taxableController.dispose();
+    _customTaxableTypeController.dispose();
     _nonTaxableController.dispose();
     _otherReasonController.dispose();
     _nonTaxableNoteController.dispose();
@@ -86,8 +134,6 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   void _selectEmployee(EmployeeModel? employee) {
     setState(() {
       _selectedEmployee = employee;
-      _hoursController.text = employee?.defaultHours.toStringAsFixed(2) ?? '';
-      _rateController.text = employee?.hourlyRate.toStringAsFixed(2) ?? '';
     });
   }
 
@@ -127,29 +173,61 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
     final employee = _selectedEmployee;
     if (employee == null) return;
 
-    final payroll = await context.read<PayrollProvider>().calculateAndSave(
-      employee: employee.copyWith(hourlyRate: _number(_rateController)),
-      hours: _number(_hoursController),
-      payPeriodStart: _periodStart,
-      payPeriodEnd: _periodEnd,
-      payDate: _payDate,
-      payFrequency: _payFrequency,
-      numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
-      otherTaxableIncome: _number(_taxableController),
-      otherNonTaxableDeduction: _number(_nonTaxableController),
-      nonTaxableDeductionReason: _deductionReason == 'Other'
-          ? _otherReasonController.text.trim()
-          : _deductionReason,
-      nonTaxableDeductionNote: _nonTaxableNoteController.text.trim().isEmpty
-          ? null
-          : _nonTaxableNoteController.text.trim(),
-    );
+    final provider = context.read<PayrollProvider>();
+    final taxableLabel = _otherTaxableType == 'Custom'
+        ? _customTaxableTypeController.text.trim()
+        : _otherTaxableType;
+    final editingPayrollId = _editingPayrollId;
+    final payroll = editingPayrollId == null
+        ? await provider.calculateAndSave(
+            employee: employee.copyWith(hourlyRate: _number(_rateController)),
+            hours: _number(_hoursController),
+            payPeriodStart: _periodStart,
+            payPeriodEnd: _periodEnd,
+            payDate: _payDate,
+            payFrequency: _payFrequency,
+            numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
+            otherTaxableIncome: _number(_taxableController),
+            otherTaxableLabel: taxableLabel,
+            otherNonTaxableDeduction: _number(_nonTaxableController),
+            nonTaxableDeductionReason: _deductionReason == 'Other'
+                ? _otherReasonController.text.trim()
+                : _deductionReason,
+            nonTaxableDeductionNote:
+                _nonTaxableNoteController.text.trim().isEmpty
+                ? null
+                : _nonTaxableNoteController.text.trim(),
+          )
+        : await provider.updateCalculatedPayroll(
+            payrollId: editingPayrollId,
+            employee: employee.copyWith(hourlyRate: _number(_rateController)),
+            hours: _number(_hoursController),
+            payPeriodStart: _periodStart,
+            payPeriodEnd: _periodEnd,
+            payDate: _payDate,
+            payFrequency: _payFrequency,
+            numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
+            otherTaxableIncome: _number(_taxableController),
+            otherTaxableLabel: taxableLabel,
+            otherNonTaxableDeduction: _number(_nonTaxableController),
+            nonTaxableDeductionReason: _deductionReason == 'Other'
+                ? _otherReasonController.text.trim()
+                : _deductionReason,
+            nonTaxableDeductionNote:
+                _nonTaxableNoteController.text.trim().isEmpty
+                ? null
+                : _nonTaxableNoteController.text.trim(),
+          );
+
+    if (payroll == null) return;
 
     if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Payroll Calculated'),
+        title: Text(
+          editingPayrollId == null ? 'Payroll Calculated' : 'Payroll Updated',
+        ),
         content: Text(
           'Final Payable Amount: '
           '${DateTimeHelper.currency(payroll.finalPayableAmount)}',
@@ -245,6 +323,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               controller: _periodsController,
               label: 'Number of Pay Periods',
               keyboardType: TextInputType.number,
+              inputFormatters: [AppInputFormatters.digitsOnly],
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
@@ -264,6 +343,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               controller: _hoursController,
               label: 'Total / Working Hours',
               keyboardType: TextInputType.number,
+              inputFormatters: [AppInputFormatters.number],
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
@@ -272,16 +352,41 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               label: 'Hourly Rate',
               keyboardType: TextInputType.number,
               prefixText: r'$',
+              inputFormatters: [AppInputFormatters.number],
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             CustomTextField(
               controller: _taxableController,
-              label: 'Other Taxable Income / Overtime',
+              label: 'Other Taxable Income Amount',
               keyboardType: TextInputType.number,
               prefixText: r'$',
+              inputFormatters: [AppInputFormatters.number],
               onChanged: (_) => setState(() {}),
             ),
+            const SizedBox(height: 12),
+            CustomDropdown<String>(
+              label: 'Other Taxable Income Type',
+              value: _otherTaxableType,
+              items: _taxableTypeOptions,
+              itemLabel: (value) => value,
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _otherTaxableType = value);
+              },
+            ),
+            if (_otherTaxableType == 'Custom') ...[
+              const SizedBox(height: 12),
+              CustomTextField(
+                controller: _customTaxableTypeController,
+                label: 'Custom Taxable Income Type',
+                inputFormatters: [
+                  AppInputFormatters.textOnly,
+                  AppInputFormatters.capitalizeFirst,
+                ],
+                textCapitalization: TextCapitalization.words,
+              ),
+            ],
             const SizedBox(height: 12),
             CustomDropdown<String>(
               label: 'Other Non-Taxable Deduction Reason',
@@ -298,6 +403,11 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               CustomTextField(
                 controller: _otherReasonController,
                 label: 'Custom Reason',
+                inputFormatters: [
+                  AppInputFormatters.textOnly,
+                  AppInputFormatters.capitalizeFirst,
+                ],
+                textCapitalization: TextCapitalization.words,
               ),
             ],
             const SizedBox(height: 12),
@@ -306,18 +416,26 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               label: 'Other Non-Taxable Deduction',
               keyboardType: TextInputType.number,
               prefixText: r'$',
+              inputFormatters: [AppInputFormatters.number],
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             CustomTextField(
               controller: _nonTaxableNoteController,
               label: 'Non-Taxable Deduction Note (Optional)',
+              inputFormatters: [
+                AppInputFormatters.sentenceText,
+                AppInputFormatters.capitalizeFirst,
+              ],
+              textCapitalization: TextCapitalization.sentences,
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: _selectedEmployee == null ? null : _savePayroll,
               icon: const Icon(Icons.save_outlined),
-              label: const Text('Save Payroll'),
+              label: Text(
+                _editingPayrollId == null ? 'Save Payroll' : 'Update Payroll',
+              ),
             ),
           ],
         ),

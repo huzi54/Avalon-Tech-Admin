@@ -29,15 +29,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
-    final success = await auth.register(
+    final success = await auth.registerAdmin(
       _emailController.text.trim(),
       _passwordController.text,
     );
     if (!mounted || !success) return;
-    Navigator.pushReplacementNamed(
-      context,
-      auth.selectedRole == AppStrings.owner ? '/owner-dashboard' : '/checkin',
-    );
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   @override
@@ -69,9 +66,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             label: Text(AppStrings.owner),
                           ),
                         ],
-                        selected: {auth.selectedRole},
-                        onSelectionChanged: (value) =>
-                            auth.setRole(value.first),
+                        selected: const {AppStrings.owner},
+                        onSelectionChanged: null,
                       ),
                       const SizedBox(height: 16),
                       CustomTextField(

@@ -3,24 +3,56 @@ import 'package:flutter/foundation.dart';
 import '../models/employee_model.dart';
 import '../models/payroll_model.dart';
 import '../models/remittance_model.dart';
+import '../services/firebase_service.dart';
 import '../services/payroll_service.dart';
 
 class PayrollProvider extends ChangeNotifier {
-  PayrollProvider([Object? unusedService, PayrollService? payrollService])
-    : _payrollService = payrollService ?? const PayrollService();
+  PayrollProvider([
+    FirebaseService? firebaseService,
+    PayrollService? payrollService,
+  ]) : _firebaseService = firebaseService ?? FirebaseService(),
+       _payrollService = payrollService ?? const PayrollService() {
+    loadPayrolls();
+  }
 
+  final FirebaseService _firebaseService;
   final PayrollService _payrollService;
   final List<PayrollModel> _payrolls = [];
   final List<RemittanceModel> _remittances = [];
+  final Map<String, String> _otherTaxableLabels = {};
+  final Map<String, String> _checkNumbers = {};
 
   PayrollModel? currentPreview;
   bool isLoading = false;
+  String? errorMessage;
 
   List<PayrollModel> get payrolls => List.unmodifiable(_payrolls);
   List<RemittanceModel> get remittances => List.unmodifiable(_remittances);
 
+  String otherTaxableLabel(String payrollId) =>
+      _otherTaxableLabels[payrollId] ?? 'Other Taxable Income';
+
+  String? checkNumber(String payrollId) => _checkNumbers[payrollId];
+
   Future<void> loadPayrolls() async {
+    isLoading = true;
+    errorMessage = null;
     notifyListeners();
+    try {
+      final payrolls = await _firebaseService.fetchPayrolls();
+      final remittances = await _firebaseService.fetchRemittances();
+      _payrolls
+        ..clear()
+        ..addAll(payrolls);
+      _remittances
+        ..clear()
+        ..addAll(remittances);
+    } catch (error) {
+      errorMessage = error.toString();
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
   }
 
   PayrollCalculationResult previewCalculation({
@@ -48,6 +80,7 @@ class PayrollProvider extends ChangeNotifier {
     String payFrequency = 'Biweekly',
     int? numberOfPayPeriods,
     double otherTaxableIncome = 0,
+    String? otherTaxableLabel,
     double otherNonTaxableDeduction = 0,
     String? nonTaxableDeductionReason,
     String? nonTaxableDeductionNote,
@@ -65,15 +98,22 @@ class PayrollProvider extends ChangeNotifier {
       nonTaxableDeductionReason: nonTaxableDeductionReason,
       nonTaxableDeductionNote: nonTaxableDeductionNote,
     );
+    final remittance = _remittanceFromPayroll(payroll, employee);
 
+    await _savePayrollAndRemittance(payroll, remittance);
     _payrolls.insert(0, payroll);
-    _remittances.insert(0, _remittanceFromPayroll(payroll, employee));
+    _remittances.insert(0, remittance);
+    _otherTaxableLabels[payroll.id] =
+        otherTaxableLabel?.trim().isNotEmpty == true
+        ? otherTaxableLabel!.trim()
+        : 'Other Taxable Income';
     currentPreview = payroll;
     notifyListeners();
     return payroll;
   }
 
-  void savePayroll(PayrollModel payroll) {
+  Future<void> savePayroll(PayrollModel payroll) async {
+    await _run(() => _firebaseService.savePayroll(payroll));
     _payrolls.insert(0, payroll);
     currentPreview = payroll;
     notifyListeners();
@@ -84,16 +124,133 @@ class PayrollProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateSlipPayment({
+  Future<void> updateSlipPayment({
     required String payrollId,
     required String slipStatus,
     String? paidVia,
-  }) {
+    String? checkNumber,
+  }) async {
     final index = _payrolls.indexWhere((payroll) => payroll.id == payrollId);
     if (index == -1) return;
 
     final original = _payrolls[index];
-    final updated = PayrollModel(
+    final updated = _copyPayroll(
+      original,
+      slipStatus: slipStatus,
+      paidVia: slipStatus.toLowerCase() == 'paid' ? paidVia : null,
+    );
+
+    await _run(() => _firebaseService.savePayroll(updated));
+    _payrolls[index] = updated;
+    if (checkNumber?.trim().isNotEmpty == true) {
+      _checkNumbers[payrollId] = checkNumber!.trim();
+    } else if (paidVia?.toLowerCase() != 'cheque') {
+      _checkNumbers.remove(payrollId);
+    }
+    if (currentPreview?.id == payrollId) currentPreview = updated;
+
+    final remittanceIndex = _remittances.indexWhere(
+      (remittance) => remittance.id == payrollId,
+    );
+    if (remittanceIndex != -1) {
+      final remittance = _remittances[remittanceIndex].copyWith(
+        status: slipStatus.toLowerCase() == 'paid' ? 'Paid' : 'Unpaid',
+      );
+      await _run(() => _firebaseService.saveRemittance(remittance));
+      _remittances[remittanceIndex] = remittance;
+    }
+
+    notifyListeners();
+  }
+
+  Future<PayrollModel?> updateCalculatedPayroll({
+    required String payrollId,
+    required EmployeeModel employee,
+    required double hours,
+    required DateTime payPeriodStart,
+    required DateTime payPeriodEnd,
+    DateTime? payDate,
+    String payFrequency = 'Biweekly',
+    int? numberOfPayPeriods,
+    double otherTaxableIncome = 0,
+    String? otherTaxableLabel,
+    double otherNonTaxableDeduction = 0,
+    String? nonTaxableDeductionReason,
+    String? nonTaxableDeductionNote,
+  }) async {
+    final index = _payrolls.indexWhere((payroll) => payroll.id == payrollId);
+    if (index == -1) return null;
+
+    final original = _payrolls[index];
+    final updated = _payrollService.calculate(
+      id: original.id,
+      createdAt: original.createdAt,
+      employee: employee,
+      hours: hours,
+      payPeriodStart: payPeriodStart,
+      payPeriodEnd: payPeriodEnd,
+      payDate: payDate,
+      payFrequency: payFrequency,
+      numberOfPayPeriods: numberOfPayPeriods,
+      otherTaxableIncome: otherTaxableIncome,
+      otherNonTaxableDeduction: otherNonTaxableDeduction,
+      nonTaxableDeductionReason: nonTaxableDeductionReason,
+      nonTaxableDeductionNote: nonTaxableDeductionNote,
+    );
+    final preservedPayment = _copyPayroll(
+      updated,
+      slipStatus: original.slipStatus,
+      paidVia: original.paidVia,
+    );
+    final remittanceStatus = _remittances
+        .where((remittance) => remittance.id == payrollId)
+        .firstOrNull
+        ?.status;
+    final remittance = _remittanceFromPayroll(
+      preservedPayment,
+      employee,
+    ).copyWith(status: remittanceStatus);
+
+    await _savePayrollAndRemittance(preservedPayment, remittance);
+    _payrolls[index] = preservedPayment;
+    final remittanceIndex = _remittances.indexWhere(
+      (item) => item.id == payrollId,
+    );
+    if (remittanceIndex == -1) {
+      _remittances.insert(0, remittance);
+    } else {
+      _remittances[remittanceIndex] = remittance;
+    }
+    _otherTaxableLabels[payrollId] =
+        otherTaxableLabel?.trim().isNotEmpty == true
+        ? otherTaxableLabel!.trim()
+        : _otherTaxableLabels[payrollId] ?? 'Other Taxable Income';
+    currentPreview = preservedPayment;
+    notifyListeners();
+    return preservedPayment;
+  }
+
+  Future<void> updateRemittanceStatus({
+    required String remittanceId,
+    required String status,
+  }) async {
+    final index = _remittances.indexWhere(
+      (remittance) => remittance.id == remittanceId,
+    );
+    if (index == -1) return;
+
+    final updated = _remittances[index].copyWith(status: status);
+    await _run(() => _firebaseService.saveRemittance(updated));
+    _remittances[index] = updated;
+    notifyListeners();
+  }
+
+  PayrollModel _copyPayroll(
+    PayrollModel original, {
+    required String slipStatus,
+    String? paidVia,
+  }) {
+    return PayrollModel(
       id: original.id,
       employeeId: original.employeeId,
       employeeName: original.employeeName,
@@ -125,29 +282,31 @@ class PayrollProvider extends ChangeNotifier {
       nonTaxableDeductionReason: original.nonTaxableDeductionReason,
       nonTaxableDeductionNote: original.nonTaxableDeductionNote,
       slipStatus: slipStatus,
-      paidVia: slipStatus.toLowerCase() == 'paid' ? paidVia : null,
+      paidVia: paidVia,
       employerCpp: original.employerCpp,
       employerEi: original.employerEi,
     );
-
-    _payrolls[index] = updated;
-    if (currentPreview?.id == payrollId) {
-      currentPreview = updated;
-    }
-    notifyListeners();
   }
 
-  void updateRemittanceStatus({
-    required String remittanceId,
-    required String status,
-  }) {
-    final index = _remittances.indexWhere(
-      (remittance) => remittance.id == remittanceId,
-    );
-    if (index == -1) return;
+  Future<void> _savePayrollAndRemittance(
+    PayrollModel payroll,
+    RemittanceModel remittance,
+  ) async {
+    await _run(() async {
+      await _firebaseService.savePayroll(payroll);
+      await _firebaseService.saveRemittance(remittance);
+    });
+  }
 
-    _remittances[index] = _remittances[index].copyWith(status: status);
-    notifyListeners();
+  Future<void> _run(Future<void> Function() action) async {
+    errorMessage = null;
+    try {
+      await action();
+    } catch (error) {
+      errorMessage = error.toString();
+      notifyListeners();
+      rethrow;
+    }
   }
 
   RemittanceModel _remittanceFromPayroll(

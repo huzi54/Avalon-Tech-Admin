@@ -3,34 +3,66 @@ import 'package:flutter/foundation.dart';
 import '../services/firebase_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  AuthProvider(this._firebaseService);
+  AuthProvider(this._firebaseService) {
+    refreshProfile();
+  }
 
   final FirebaseService _firebaseService;
   bool isLoading = false;
-  String selectedRole = 'Employee';
   String? errorMessage;
+  AppUserProfile? profile;
 
   bool get isAuthenticated => _firebaseService.currentUser != null;
+  bool get hasActiveSubscription => profile?.hasActiveSubscription ?? false;
 
-  void setRole(String role) {
-    selectedRole = role;
-    notifyListeners();
-  }
-
-  Future<bool> login(String email, String password) async {
-    return _runAuthAction(() => _firebaseService.signIn(email, password));
-  }
-
-  Future<bool> register(String email, String password) async {
-    return _runAuthAction(() async {
-      final credential = await _firebaseService.register(email, password);
-      await _firebaseService.saveUserRole(credential.user!.uid, selectedRole);
+  Future<void> refreshProfile() async {
+    if (!isAuthenticated) return;
+    await _run(() async {
+      profile = await _firebaseService.fetchCurrentUserProfile();
     });
   }
 
-  Future<void> logout() => _firebaseService.signOut();
+  Future<bool> loginAdmin(String email, String password) {
+    return _run(() async {
+      await _firebaseService.signIn(email, password);
+      profile = await _firebaseService.fetchCurrentUserProfile();
+    });
+  }
 
-  Future<bool> _runAuthAction(Future<void> Function() action) async {
+  Future<bool> registerAdmin(String email, String password) {
+    return _run(() async {
+      await _firebaseService.registerAdmin(email, password);
+      profile = await _firebaseService.fetchCurrentUserProfile();
+    });
+  }
+
+  Future<bool> verifyOwnerPassword(String password) {
+    return _run(() => _firebaseService.verifyOwnerPassword(password));
+  }
+
+  Future<bool> activateSubscription({
+    required String type,
+    required DateTime start,
+    required DateTime end,
+  }) {
+    return _run(() async {
+      await _firebaseService.updateSubscription(
+        isPremium: true,
+        subscriptionType: type,
+        subscriptionStart: start,
+        subscriptionEnd: end,
+      );
+      profile = await _firebaseService.fetchCurrentUserProfile();
+    });
+  }
+
+  Future<void> logout() async {
+    await _firebaseService.signOut();
+    profile = null;
+    notifyListeners();
+  }
+
+  Future<bool> _run(Future<void> Function() action) async {
     isLoading = true;
     errorMessage = null;
     notifyListeners();

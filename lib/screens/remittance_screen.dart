@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/remittance_model.dart';
 import '../providers/payroll_provider.dart';
 import '../utils/date_time_helper.dart';
+import 'remittance_preview_screen.dart';
 
 class RemittanceArgs {
   const RemittanceArgs({this.statusFilter});
@@ -210,7 +211,9 @@ class _RemittanceTable extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        showCheckboxColumn: false,
         columns: const [
+          DataColumn(label: Text('Action')),
           DataColumn(label: Text('Employee')),
           DataColumn(label: Text('Pay Frequency')),
           DataColumn(label: Text('Period')),
@@ -227,7 +230,15 @@ class _RemittanceTable extends StatelessWidget {
         rows: [
           for (final remittance in remittances)
             DataRow(
+              onSelectChanged: (_) => _openPreview(context, remittance),
               cells: [
+                DataCell(
+                  OutlinedButton.icon(
+                    onPressed: () => _openPreview(context, remittance),
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                    label: const Text('Preview'),
+                  ),
+                ),
                 DataCell(
                   Text('${remittance.employeeName} (${remittance.employeeId})'),
                 ),
@@ -276,6 +287,14 @@ class _RemittanceTable extends StatelessWidget {
               ],
             ),
         ],
+      ),
+    );
+  }
+
+  void _openPreview(BuildContext context, RemittanceModel remittance) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RemittancePreviewScreen(remittanceId: remittance.id),
       ),
     );
   }

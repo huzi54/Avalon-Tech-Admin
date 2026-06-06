@@ -30,15 +30,12 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
-    final success = await auth.login(
+    final success = await auth.loginAdmin(
       _emailController.text.trim(),
       _passwordController.text,
     );
     if (!mounted || !success) return;
-    Navigator.pushReplacementNamed(
-      context,
-      auth.selectedRole == AppStrings.owner ? '/owner-dashboard' : '/checkin',
-    );
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   @override
@@ -79,9 +76,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               icon: Icon(Icons.admin_panel_settings_outlined),
                             ),
                           ],
-                          selected: {auth.selectedRole},
-                          onSelectionChanged: (value) =>
-                              auth.setRole(value.first),
+                          selected: const {AppStrings.employee},
+                          onSelectionChanged: null,
                         ),
                         const SizedBox(height: 16),
                         CustomTextField(

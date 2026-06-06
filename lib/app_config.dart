@@ -21,6 +21,9 @@ class AppConfig {
 
   static const String employeesCollection = 'employees';
   static const String payrollsCollection = 'payrolls';
+  static const String remittancesCollection = 'remittances';
   static const String attendanceCollection = 'attendance';
+  static const String weeklyReportsCollection = 'weeklyReports';
   static const String usersCollection = 'users';
+  static const String employeeDocumentsPath = 'employee_documents';
 }
