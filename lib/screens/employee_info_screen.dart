@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -797,6 +799,21 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
 
   String _fileName(String? path) {
     if (path == null || path.isEmpty) return '-';
+
+    try {
+      final payload = jsonDecode(path);
+      if (payload is Map<String, dynamic> &&
+          payload['storageType'] == 'firestoreBase64') {
+        final fileName = payload['fileName'] as String?;
+        return fileName == null || fileName.isEmpty
+            ? 'Stored in profile'
+            : '$fileName - stored in profile';
+      }
+    } catch (_) {
+      // Old records may contain a URL/local path instead of the new JSON
+      // payload, so keep the legacy display behavior below.
+    }
+
     return path.split(RegExp(r'[\\/]')).last;
   }
 

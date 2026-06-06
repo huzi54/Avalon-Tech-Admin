@@ -46,10 +46,6 @@ class RemittancePreviewScreen extends StatelessWidget {
                   items: const [
                     DropdownMenuItem(value: 'Unpaid', child: Text('Unpaid')),
                     DropdownMenuItem(value: 'Paid', child: Text('Paid')),
-                    DropdownMenuItem(
-                      value: 'Submitted',
-                      child: Text('Submitted'),
-                    ),
                   ],
                   onChanged: (value) {
                     if (value == null) return;

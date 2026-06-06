@@ -356,15 +356,6 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
-            CustomTextField(
-              controller: _taxableController,
-              label: 'Other Taxable Income Amount',
-              keyboardType: TextInputType.number,
-              prefixText: r'$',
-              inputFormatters: [AppInputFormatters.number],
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
             CustomDropdown<String>(
               label: 'Other Taxable Income Type',
               value: _otherTaxableType,
@@ -374,6 +365,16 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
                 if (value == null) return;
                 setState(() => _otherTaxableType = value);
               },
+            ),
+
+            const SizedBox(height: 12),
+            CustomTextField(
+              controller: _taxableController,
+              label: 'Other Taxable Income Amount',
+              keyboardType: TextInputType.number,
+              prefixText: r'$',
+              inputFormatters: [AppInputFormatters.number],
+              onChanged: (_) => setState(() {}),
             ),
             if (_otherTaxableType == 'Custom') ...[
               const SizedBox(height: 12),

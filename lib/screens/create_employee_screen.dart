@@ -850,7 +850,9 @@ class _DocumentDropField extends StatelessWidget {
                   children: [
                     const SizedBox(height: 6),
                     Text(
-                      fileName == null ? 'PDF, JPG, PNG (Max 5MB)' : path!,
+                      fileName == null
+                          ? 'PDF, JPG, PNG (stored in profile, max 700KB)'
+                          : path!,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(

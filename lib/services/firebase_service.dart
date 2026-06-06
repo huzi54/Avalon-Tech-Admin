@@ -1,9 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image/image.dart' as image;
 
 import '../app_config.dart';
@@ -65,21 +65,20 @@ class AppServiceException implements Exception {
 }
 
 class FirebaseService {
+  static const int _maxProfileDocumentBytes = 700 * 1024;
+
   FirebaseService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
-    FirebaseStorage? storage,
     this.isAvailable = true,
   }) : _auth = isAvailable ? auth ?? FirebaseAuth.instance : null,
        _firestore = isAvailable
            ? firestore ?? FirebaseFirestore.instance
-           : null,
-       _storage = isAvailable ? storage ?? FirebaseStorage.instance : null;
+           : null;
 
   final bool isAvailable;
   final FirebaseAuth? _auth;
   final FirebaseFirestore? _firestore;
-  final FirebaseStorage? _storage;
 
   User? get currentUser => _auth?.currentUser;
   Stream<User?> authStateChanges() =>
@@ -330,16 +329,30 @@ class FirebaseService {
       }
 
       final extension = localPath.split('.').last.toLowerCase();
+      final isImage = ['jpg', 'jpeg', 'png'].contains(extension);
       final bytes = await _compressedBytes(file, extension);
-      final fileName = '${DateTime.now().microsecondsSinceEpoch}.$extension';
-      final ref = _storage!.ref().child(
-        '${AppConfig.employeeDocumentsPath}/$employeeId/$documentType/$fileName',
-      );
-      await ref.putData(
-        bytes,
-        SettableMetadata(contentType: _contentType(extension)),
-      );
-      return ref.getDownloadURL();
+      if (bytes.length > _maxProfileDocumentBytes) {
+        throw const AppServiceException(
+          'Document is too large for employee profile storage. Please choose a smaller file under 700KB.',
+        );
+      }
+      final storedExtension = isImage ? 'jpg' : extension;
+      final fileName =
+          '$documentType-${DateTime.now().microsecondsSinceEpoch}.$storedExtension';
+
+      // Firebase Storage is intentionally not used here. For this desktop app
+      // flow, documents are compressed and embedded directly in the employee
+      // Firestore profile as a compact JSON payload with Base64 file data.
+      return jsonEncode({
+        'storageType': 'firestoreBase64',
+        'employeeId': employeeId,
+        'documentType': documentType,
+        'fileName': fileName,
+        'contentType': _contentType(storedExtension),
+        'sizeBytes': bytes.length,
+        'base64Data': base64Encode(bytes),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
     });
   }
 
@@ -350,10 +363,23 @@ class FirebaseService {
     final decoded = image.decodeImage(bytes);
     if (decoded == null) return bytes;
 
-    final resized = decoded.width > 1600
-        ? image.copyResize(decoded, width: 1600)
+    var resized = decoded.width > 1200
+        ? image.copyResize(decoded, width: 1200)
         : decoded;
-    return Uint8List.fromList(image.encodeJpg(resized, quality: 72));
+
+    for (final quality in [70, 60, 50, 42, 35]) {
+      final encoded = Uint8List.fromList(
+        image.encodeJpg(resized, quality: quality),
+      );
+      if (encoded.length <= _maxProfileDocumentBytes || quality == 35) {
+        return encoded;
+      }
+      if (resized.width > 900) {
+        resized = image.copyResize(resized, width: 900);
+      }
+    }
+
+    return bytes;
   }
 
   String _contentType(String extension) {
