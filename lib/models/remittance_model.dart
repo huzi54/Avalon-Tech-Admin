@@ -18,6 +18,8 @@ class RemittanceModel {
     required this.totalRemittance,
     required this.createdAt,
     this.status = 'Unpaid',
+    this.paidVia,
+    this.notes,
   });
 
   final String id;
@@ -38,8 +40,16 @@ class RemittanceModel {
   final double totalRemittance;
   final DateTime createdAt;
   final String status;
+  final String? paidVia;
+  final String? notes;
 
-  RemittanceModel copyWith({String? status}) {
+  RemittanceModel copyWith({
+    String? status,
+    String? paidVia,
+    bool clearPaidVia = false,
+    String? notes,
+    bool clearNotes = false,
+  }) {
     return RemittanceModel(
       id: id,
       employeeId: employeeId,
@@ -59,6 +69,8 @@ class RemittanceModel {
       totalRemittance: totalRemittance,
       createdAt: createdAt,
       status: status ?? this.status,
+      paidVia: clearPaidVia ? null : paidVia ?? this.paidVia,
+      notes: clearNotes ? null : notes ?? this.notes,
     );
   }
 
@@ -86,6 +98,8 @@ class RemittanceModel {
       totalRemittance: (map['totalRemittance'] as num? ?? 0).toDouble(),
       createdAt: readDate('createdAt'),
       status: map['status'] as String? ?? 'Unpaid',
+      paidVia: map['paidVia'] as String?,
+      notes: map['notes'] as String?,
     );
   }
 
@@ -109,6 +123,8 @@ class RemittanceModel {
       'totalRemittance': totalRemittance,
       'createdAt': createdAt.toIso8601String(),
       'status': status,
+      'paidVia': paidVia,
+      'notes': notes,
     };
   }
 }

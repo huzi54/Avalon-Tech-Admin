@@ -336,7 +336,7 @@ class PdfService {
                           ),
                           divider(),
                           amountRow(
-                            'Total Deductions',
+                            'Total Deductions (Total Statutory Deductions)',
                             payroll.totalDeductions,
                             bold: true,
                           ),
@@ -416,6 +416,7 @@ class PdfService {
     required String designation,
     required String otherTaxableLabel,
     String? checkNumber,
+    bool includeOwnerAnnualDetails = false,
   }) async {
     final pdf = pw.Document();
     final navy = PdfColor.fromHex('#071846');
@@ -432,7 +433,7 @@ class PdfService {
     final note = PdfColor.fromHex('#FFF9EC');
     final noteBorder = PdfColor.fromHex('#E2B65B');
 
-    pw.TextStyle base({bool bold = false, double size = 8.6, PdfColor? color}) {
+    pw.TextStyle base({bool bold = false, double size = 7.4, PdfColor? color}) {
       return pw.TextStyle(
         fontSize: size,
         color: color ?? text,
@@ -442,11 +443,11 @@ class PdfService {
 
     pw.Widget kv(String label, String value, {bool bold = false}) {
       return pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 4),
+        padding: const pw.EdgeInsets.symmetric(vertical: 2.2),
         child: pw.Row(
           children: [
-            pw.SizedBox(width: 94, child: pw.Text(label, style: base())),
-            pw.SizedBox(width: 12, child: pw.Text(':', style: base())),
+            pw.SizedBox(width: 88, child: pw.Text(label, style: base())),
+            pw.SizedBox(width: 9, child: pw.Text(':', style: base())),
             pw.Expanded(
               child: pw.Text(value, style: base(bold: bold)),
             ),
@@ -464,7 +465,7 @@ class PdfService {
     }) {
       return pw.Container(
         color: background,
-        padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3.4),
         child: pw.Row(
           children: [
             pw.Expanded(
@@ -507,7 +508,7 @@ class PdfService {
       required List<pw.Widget> rows,
     }) {
       return pw.Container(
-        margin: const pw.EdgeInsets.only(bottom: 9),
+        margin: const pw.EdgeInsets.only(bottom: 5),
         decoration: pw.BoxDecoration(
           border: pw.Border.all(color: color, width: 0.55),
           borderRadius: pw.BorderRadius.circular(5),
@@ -516,7 +517,7 @@ class PdfService {
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
             pw.Container(
-              padding: const pw.EdgeInsets.fromLTRB(10, 7, 10, 7),
+              padding: const pw.EdgeInsets.fromLTRB(8, 4, 8, 4),
               decoration: pw.BoxDecoration(
                 color: background,
                 borderRadius: const pw.BorderRadius.only(
@@ -527,8 +528,8 @@ class PdfService {
               child: pw.Row(
                 children: [
                   pw.Container(
-                    width: 21,
-                    height: 21,
+                    width: 17,
+                    height: 17,
                     alignment: pw.Alignment.center,
                     decoration: pw.BoxDecoration(
                       shape: pw.BoxShape.circle,
@@ -542,19 +543,19 @@ class PdfService {
                           : title.startsWith('NET')
                           ? '='
                           : 'i',
-                      style: base(bold: true, size: 12, color: color),
+                      style: base(bold: true, size: 9, color: color),
                     ),
                   ),
-                  pw.SizedBox(width: 10),
+                  pw.SizedBox(width: 7),
                   pw.Text(
                     title,
-                    style: base(bold: true, size: 10.5, color: color),
+                    style: base(bold: true, size: 8.7, color: color),
                   ),
                 ],
               ),
             ),
             pw.Container(
-              padding: const pw.EdgeInsets.symmetric(vertical: 5),
+              padding: const pw.EdgeInsets.symmetric(vertical: 2),
               decoration: pw.BoxDecoration(
                 border: pw.Border(top: pw.BorderSide(color: border)),
               ),
@@ -590,17 +591,17 @@ class PdfService {
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
             pw.Container(
-              padding: const pw.EdgeInsets.fromLTRB(10, 7, 10, 7),
+              padding: const pw.EdgeInsets.fromLTRB(8, 4, 8, 4),
               decoration: pw.BoxDecoration(
                 border: pw.Border(bottom: pw.BorderSide(color: border)),
               ),
               child: pw.Text(
                 title,
-                style: base(bold: true, size: 9.5, color: color),
+                style: base(bold: true, size: 8.2, color: color),
               ),
             ),
             pw.Padding(
-              padding: const pw.EdgeInsets.all(10),
+              padding: const pw.EdgeInsets.all(6),
               child: pw.Column(children: rows),
             ),
           ],
@@ -612,9 +613,17 @@ class PdfService {
         ? payroll.paidVia ?? '-'
         : '-';
     final checkText =
-        payroll.paidVia == 'Cheque' && checkNumber?.trim().isNotEmpty == true
+        payroll.paidVia == 'Check' && checkNumber?.trim().isNotEmpty == true
         ? checkNumber!.trim()
         : '-';
+    final deductionReason =
+        payroll.nonTaxableDeductionReason?.trim().isNotEmpty == true
+        ? payroll.nonTaxableDeductionReason!.trim()
+        : 'Other';
+    final deductionNote =
+        payroll.nonTaxableDeductionNote?.trim().isNotEmpty == true
+        ? payroll.nonTaxableDeductionNote!.trim()
+        : null;
     final payPeriod =
         '${DateTimeHelper.formatDate(payroll.payPeriodStart)} - ${DateTimeHelper.formatDate(payroll.payPeriodEnd)}';
     final payDate = payroll.payDate == null
@@ -624,10 +633,10 @@ class PdfService {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(10),
+        margin: const pw.EdgeInsets.all(7),
         build: (context) {
           return pw.Container(
-            padding: const pw.EdgeInsets.fromLTRB(16, 12, 16, 10),
+            padding: const pw.EdgeInsets.fromLTRB(12, 8, 12, 7),
             decoration: pw.BoxDecoration(
               border: pw.Border.all(color: PdfColor.fromHex('#8EA0B8')),
               borderRadius: pw.BorderRadius.circular(5),
@@ -640,41 +649,41 @@ class PdfService {
                     AppConfig.companyName,
                     style: pw.TextStyle(
                       color: navy,
-                      fontSize: 25,
+                      fontSize: 22,
                       fontWeight: pw.FontWeight.bold,
                     ),
                   ),
                 ),
-                pw.SizedBox(height: 3),
+                pw.SizedBox(height: 2),
                 pw.Center(
                   child: pw.Text(
                     AppConfig.companyAddress,
-                    style: base(size: 10),
+                    style: base(size: 8.5),
                   ),
                 ),
-                pw.SizedBox(height: 7),
+                pw.SizedBox(height: 4),
                 pw.Center(
                   child: pw.Row(
                     mainAxisSize: pw.MainAxisSize.min,
                     children: [
-                      pw.Container(width: 58, height: 0.7, color: navy),
-                      pw.SizedBox(width: 12),
+                      pw.Container(width: 52, height: 0.7, color: navy),
+                      pw.SizedBox(width: 9),
                       pw.Text(
                         'PAY SLIP',
                         style: pw.TextStyle(
                           color: navy,
-                          fontSize: 19,
+                          fontSize: 16,
                           fontWeight: pw.FontWeight.bold,
                         ),
                       ),
-                      pw.SizedBox(width: 12),
-                      pw.Container(width: 58, height: 0.7, color: navy),
+                      pw.SizedBox(width: 9),
+                      pw.Container(width: 52, height: 0.7, color: navy),
                     ],
                   ),
                 ),
-                pw.SizedBox(height: 8),
+                pw.SizedBox(height: 5),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
+                  padding: const pw.EdgeInsets.all(8),
                   decoration: pw.BoxDecoration(
                     border: pw.Border.all(color: border),
                     borderRadius: pw.BorderRadius.circular(5),
@@ -682,8 +691,8 @@ class PdfService {
                   child: pw.Row(
                     children: [
                       pw.Container(
-                        width: 58,
-                        height: 58,
+                        width: 48,
+                        height: 48,
                         alignment: pw.Alignment.center,
                         decoration: pw.BoxDecoration(
                           color: PdfColor.fromHex('#EEF2FA'),
@@ -695,12 +704,12 @@ class PdfService {
                               : payroll.employeeName.trim()[0].toUpperCase(),
                           style: pw.TextStyle(
                             color: navy,
-                            fontSize: 26,
+                            fontSize: 21,
                             fontWeight: pw.FontWeight.bold,
                           ),
                         ),
                       ),
-                      pw.SizedBox(width: 26),
+                      pw.SizedBox(width: 18),
                       pw.Expanded(
                         child: pw.Column(
                           children: [
@@ -714,8 +723,8 @@ class PdfService {
                           ],
                         ),
                       ),
-                      pw.Container(width: 0.7, height: 72, color: border),
-                      pw.SizedBox(width: 22),
+                      pw.Container(width: 0.7, height: 58, color: border),
+                      pw.SizedBox(width: 16),
                       pw.Expanded(
                         child: pw.Column(
                           children: [
@@ -738,7 +747,7 @@ class PdfService {
                     ],
                   ),
                 ),
-                pw.SizedBox(height: 9),
+                pw.SizedBox(height: 5),
                 tableSection(
                   title: 'EARNING DETAILS',
                   color: green,
@@ -774,13 +783,7 @@ class PdfService {
                     amountLine('Provincial Tax', payroll.provincialTax),
                     pw.Container(height: 0.45, color: border),
                     amountLine(
-                      'Total Tax (Federal + Provincial)',
-                      payroll.totalTax,
-                      bold: true,
-                    ),
-                    pw.Container(height: 0.45, color: border),
-                    amountLine(
-                      'TOTAL DEDUCTIONS (CPP + EI + TOTAL TAX)',
+                      'TOTAL DEDUCTIONS (TOTAL STATUTORY DEDUCTIONS)',
                       payroll.totalDeductions,
                       bold: true,
                       color: red,
@@ -796,7 +799,7 @@ class PdfService {
                     amountLine('Gross Pay (Total Earnings)', payroll.grossPay),
                     pw.Container(height: 0.45, color: border),
                     amountLine(
-                      'Total Deductions',
+                      'Total Deductions (Total Statutory Deductions)',
                       payroll.totalDeductions,
                       color: red,
                       negative: true,
@@ -811,11 +814,19 @@ class PdfService {
                     ),
                     pw.Container(height: 0.45, color: border),
                     amountLine(
-                      'Other Non-Taxable Deduction',
+                      'Other Non-Taxable Deduction ($deductionReason)',
                       payroll.otherNonTaxableDeduction,
                       color: red,
                       negative: payroll.otherNonTaxableDeduction > 0,
                     ),
+                    if (deductionNote != null) ...[
+                      pw.Container(height: 0.45, color: border),
+                      line(
+                        'Deduction Note',
+                        deductionNote,
+                        color: PdfColor.fromHex('#475569'),
+                      ),
+                    ],
                     pw.Container(height: 0.45, color: border),
                     amountLine(
                       'FINAL PAYABLE AMOUNT',
@@ -853,11 +864,11 @@ class PdfService {
                             child: pw.Row(
                               children: [
                                 pw.SizedBox(
-                                  width: 94,
+                                  width: 88,
                                   child: pw.Text('Slip Status', style: base()),
                                 ),
                                 pw.SizedBox(
-                                  width: 12,
+                                  width: 9,
                                   child: pw.Text(':', style: base()),
                                 ),
                                 pw.Container(
@@ -890,9 +901,9 @@ class PdfService {
                     ),
                   ],
                 ),
-                pw.SizedBox(height: 9),
+                pw.SizedBox(height: 5),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(10),
+                  padding: const pw.EdgeInsets.all(7),
                   decoration: pw.BoxDecoration(
                     color: note,
                     border: pw.Border.all(color: noteBorder),
@@ -901,23 +912,26 @@ class PdfService {
                   child: pw.Row(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('i', style: base(bold: true, color: noteBorder)),
-                      pw.SizedBox(width: 10),
+                      pw.Text(
+                        'NOTE',
+                        style: base(bold: true, color: noteBorder),
+                      ),
+                      pw.SizedBox(width: 8),
                       pw.Expanded(
                         child: pw.Text(
                           'Payment date or method may vary due to holidays, banking delays, or system issues. Includes a 30-minute unpaid lunch break as per Canadian labour rules. Salary reflects approved payroll adjustments and authorized deductions.',
-                          style: base(size: 8),
+                          style: base(size: 7),
                         ),
                       ),
                     ],
                   ),
                 ),
-                pw.Spacer(),
+                pw.SizedBox(height: 5),
                 pw.Center(
                   child: pw.Text(
                     'Thank you for your hard work!',
                     style: pw.TextStyle(
-                      fontSize: 9,
+                      fontSize: 8,
                       color: PdfColor.fromHex('#333333'),
                       fontStyle: pw.FontStyle.italic,
                     ),
@@ -930,6 +944,130 @@ class PdfService {
       ),
     );
 
+    if (includeOwnerAnnualDetails) {
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(10),
+          build: (context) {
+            return pw.Container(
+              padding: const pw.EdgeInsets.all(18),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColor.fromHex('#8EA0B8')),
+                borderRadius: pw.BorderRadius.circular(5),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Center(
+                    child: pw.Text(
+                      AppConfig.companyName,
+                      style: pw.TextStyle(
+                        color: navy,
+                        fontSize: 25,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 3),
+                  pw.Center(
+                    child: pw.Text(
+                      AppConfig.companyAddress,
+                      style: base(size: 10),
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  pw.Center(
+                    child: pw.Text(
+                      'OWNER PAYROLL DETAILS',
+                      style: base(bold: true, size: 18, color: navy),
+                    ),
+                  ),
+                  pw.SizedBox(height: 18),
+                  infoCard(
+                    title: 'EMPLOYEE & PAY PERIOD',
+                    color: navy,
+                    rows: [
+                      kv('Employee Name', payroll.employeeName, bold: true),
+                      kv('Employee ID', payroll.employeeId),
+                      kv('Designation', designation),
+                      kv('Pay Frequency', payroll.payFrequency),
+                      kv('Number of Periods', '${payroll.numberOfPayPeriods}'),
+                      kv('Pay Period', payPeriod),
+                      kv('Pay Date', payDate),
+                    ],
+                  ),
+                  pw.SizedBox(height: 14),
+                  tableSection(
+                    title: 'ANNUAL & TAX DETAILS',
+                    color: purple,
+                    background: PdfColor.fromHex('#F7F2FF'),
+                    rows: [
+                      amountLine('Annual Income', payroll.annualIncome),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine(
+                        'Federal TD1 Amount',
+                        payroll.federalTd1Amount,
+                      ),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine(
+                        'Provincial TD1 Amount',
+                        payroll.provincialTd1Amount,
+                      ),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine(
+                        'Canada Employment Amount',
+                        payroll.canadaEmploymentAmount,
+                      ),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine(
+                        'CPP Basic Exemption Per Period',
+                        payroll.cppBasicExemptionPerPeriod,
+                      ),
+                    ],
+                  ),
+                  tableSection(
+                    title: 'EMPLOYER REMITTANCE',
+                    color: blue,
+                    background: blueBg,
+                    rows: [
+                      amountLine(
+                        'Employee Income Tax (Federal + Provincial)',
+                        payroll.employeeIncomeTax,
+                      ),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine('Employee CPP', payroll.cpp),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine('Employee EI', payroll.ei),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine('Employer CPP', payroll.employerCpp),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine('Employer EI', payroll.employerEi),
+                      pw.Container(height: 0.45, color: border),
+                      amountLine(
+                        'TOTAL REMITTANCE',
+                        payroll.totalRemittance,
+                        bold: true,
+                        color: blue,
+                        background: blueBg,
+                      ),
+                    ],
+                  ),
+                  pw.Spacer(),
+                  pw.Center(
+                    child: pw.Text(
+                      'Printed Date: ${DateTimeHelper.formatDate(DateTime.now())}',
+                      style: base(size: 8),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return pdf.save();
   }
 
@@ -939,7 +1077,6 @@ class PdfService {
     final border = PdfColor.fromHex('#C5CEDA');
     final light = PdfColor.fromHex('#F7FAFE');
     final blue = PdfColor.fromHex('#003586');
-    final green = PdfColor.fromHex('#147A3D');
 
     pw.TextStyle base({bool bold = false, double size = 10, PdfColor? color}) {
       return pw.TextStyle(
@@ -1231,32 +1368,40 @@ class PdfService {
                       pw.Container(width: 0.7, height: 42, color: border),
                       pw.SizedBox(width: 28),
                       pw.Expanded(
-                        child: pw.Row(
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            pw.Text('Status', style: base()),
-                            pw.SizedBox(width: 20),
-                            pw.Text(':', style: base()),
-                            pw.SizedBox(width: 20),
-                            pw.Container(
-                              padding: const pw.EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: pw.BoxDecoration(
-                                color: PdfColor.fromHex('#DFF4E8'),
-                                borderRadius: pw.BorderRadius.circular(4),
-                              ),
-                              child: pw.Text(
-                                remittance.status,
-                                style: base(bold: true, color: green),
-                              ),
-                            ),
+                            kv('S', 'Status', remittance.status),
+                            kv('>', 'Paid Via', remittance.paidVia ?? '-'),
                           ],
                         ),
                       ),
                     ],
                   ),
                 ),
+                if (remittance.notes?.trim().isNotEmpty == true) ...[
+                  pw.SizedBox(height: 12),
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(12),
+                    decoration: pw.BoxDecoration(
+                      color: light,
+                      border: pw.Border.all(color: border),
+                      borderRadius: pw.BorderRadius.circular(5),
+                    ),
+                    child: pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('Notes: ', style: base(bold: true)),
+                        pw.Expanded(
+                          child: pw.Text(
+                            remittance.notes!.trim(),
+                            style: base(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 pw.Spacer(),
                 pw.Row(
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
@@ -1320,5 +1465,164 @@ class PdfService {
     );
 
     return pdf.save();
+  }
+
+  Future<Uint8List> buildRemittanceList(
+    List<RemittanceModel> remittances,
+  ) async {
+    final pdf = pw.Document();
+    final navy = PdfColor.fromHex('#071846');
+    final header = PdfColor.fromHex('#EFF6FF');
+    final border = PdfColor.fromHex('#CBD5E1');
+    final total = remittances.fold<double>(
+      0,
+      (sum, record) => sum + record.totalRemittance,
+    );
+
+    pw.TextStyle style({bool bold = false, double size = 7.4}) {
+      return pw.TextStyle(
+        color: navy,
+        fontSize: size,
+        fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+      );
+    }
+
+    pw.Widget cell(String value, {bool bold = false, PdfColor? color}) {
+      return pw.Container(
+        color: color,
+        padding: const pw.EdgeInsets.all(5),
+        child: pw.Text(value, style: style(bold: bold), maxLines: 3),
+      );
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(18),
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          children: [
+            pw.Text(
+              AppConfig.companyName,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                color: navy,
+                fontSize: 20,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 3),
+            pw.Text(
+              AppConfig.companyAddress,
+              textAlign: pw.TextAlign.center,
+              style: style(size: 8.5),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Row(
+              children: [
+                pw.Text(
+                  'Remittance Records',
+                  style: style(size: 14, bold: true),
+                ),
+                pw.Spacer(),
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: pw.BoxDecoration(
+                    color: header,
+                    border: pw.Border.all(color: border),
+                  ),
+                  child: pw.Text(
+                    'TOTAL: ${DateTimeHelper.currency(total)}',
+                    style: style(size: 11, bold: true),
+                  ),
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 8),
+          ],
+        ),
+        footer: (_) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Printed: ${DateTimeHelper.formatDate(DateTime.now())}',
+            style: style(size: 7),
+          ),
+        ),
+        build: (_) => [
+          pw.Table(
+            border: pw.TableBorder.all(color: border, width: 0.5),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.35),
+              1: pw.FlexColumnWidth(0.75),
+              2: pw.FlexColumnWidth(1.25),
+              3: pw.FlexColumnWidth(0.75),
+              4: pw.FlexColumnWidth(0.75),
+              5: pw.FlexColumnWidth(0.75),
+              6: pw.FlexColumnWidth(0.75),
+              7: pw.FlexColumnWidth(0.75),
+              8: pw.FlexColumnWidth(0.8),
+              9: pw.FlexColumnWidth(0.95),
+              10: pw.FlexColumnWidth(0.75),
+              11: pw.FlexColumnWidth(0.9),
+              12: pw.FlexColumnWidth(1.4),
+            },
+            children: [
+              pw.TableRow(
+                children: [
+                  cell('Employee', bold: true, color: header),
+                  cell('Frequency', bold: true, color: header),
+                  cell('Period', bold: true, color: header),
+                  cell('Gross', bold: true, color: header),
+                  cell('Tax', bold: true, color: header),
+                  cell('Emp CPP', bold: true, color: header),
+                  cell('Er CPP', bold: true, color: header),
+                  cell('Emp EI', bold: true, color: header),
+                  cell('Er EI', bold: true, color: header),
+                  cell('Remittance', bold: true, color: header),
+                  cell('Status', bold: true, color: header),
+                  cell('Paid Via', bold: true, color: header),
+                  cell('Notes', bold: true, color: header),
+                ],
+              ),
+              for (final record in remittances)
+                pw.TableRow(
+                  children: [
+                    cell('${record.employeeName}\n${record.employeeId}'),
+                    cell(record.payFrequency),
+                    cell(
+                      '${DateTimeHelper.formatDate(record.payPeriodStart)} - '
+                      '${DateTimeHelper.formatDate(record.payPeriodEnd)}',
+                    ),
+                    cell(DateTimeHelper.currency(record.grossPay)),
+                    cell(DateTimeHelper.currency(record.employeeIncomeTax)),
+                    cell(DateTimeHelper.currency(record.employeeCpp)),
+                    cell(DateTimeHelper.currency(record.employerCpp)),
+                    cell(DateTimeHelper.currency(record.employeeEi)),
+                    cell(DateTimeHelper.currency(record.employerEi)),
+                    cell(DateTimeHelper.currency(record.totalRemittance)),
+                    cell(record.status),
+                    cell(record.paidVia ?? '-'),
+                    cell(
+                      record.notes?.trim().isNotEmpty == true
+                          ? record.notes!.trim()
+                          : '-',
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  Future<void> printRemittanceList(List<RemittanceModel> remittances) {
+    return Printing.layoutPdf(
+      onLayout: (_) => buildRemittanceList(remittances),
+    );
   }
 }

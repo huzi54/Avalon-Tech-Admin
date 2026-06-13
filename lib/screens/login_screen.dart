@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../app_config.dart';
+import '../core/features/auth/providers/login_form_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/employee_provider.dart';
 import '../providers/payroll_provider.dart';
@@ -23,7 +24,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _ownerPinController = TextEditingController();
-  bool _registerMode = false;
 
   @override
   void dispose() {
@@ -36,7 +36,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submitAdmin() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
-    final success = _registerMode
+    final registerMode = context.read<LoginFormProvider>().registerMode;
+    final success = registerMode
         ? await auth.registerAdmin(
             _emailController.text.trim(),
             _passwordController.text,
@@ -182,73 +183,80 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _adminLogin(AuthProvider auth) {
-    return Form(
-      key: _formKey,
-      child: Column(
-        key: const ValueKey('admin-login'),
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _brandHeader(
-            _registerMode
-                ? 'Create the main admin account.'
-                : 'Login with the main admin account.',
+    return Consumer<LoginFormProvider>(
+      builder: (context, formProvider, _) {
+        final registerMode = formProvider.registerMode;
+        return Form(
+          key: _formKey,
+          child: Column(
+            key: const ValueKey('admin-login'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _brandHeader(
+                registerMode
+                    ? 'Create the main admin account.'
+                    : 'Login with the main admin account.',
+              ),
+              const SizedBox(height: 26),
+              TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'Admin Email',
+                  prefixIcon: Icon(Icons.mail_outline),
+                ),
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  if (text.isEmpty) return 'Required';
+                  if (!text.contains('@') || !text.contains('.')) {
+                    return 'Enter a valid email';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+                validator: (value) {
+                  if ((value ?? '').length < 6) return 'Minimum 6 characters';
+                  return null;
+                },
+              ),
+              _ErrorText(message: auth.errorMessage),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: auth.isLoading ? null : _submitAdmin,
+                icon: auth.isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.login_outlined),
+                label: Text(
+                  registerMode ? 'Create Admin Account' : 'Login Admin',
+                ),
+              ),
+              TextButton(
+                onPressed: auth.isLoading
+                    ? null
+                    : formProvider.toggleRegisterMode,
+                child: Text(
+                  registerMode
+                      ? 'Already have an admin account? Login'
+                      : 'Create admin account',
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 26),
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'Admin Email',
-              prefixIcon: Icon(Icons.mail_outline),
-            ),
-            validator: (value) {
-              final text = value?.trim() ?? '';
-              if (text.isEmpty) return 'Required';
-              if (!text.contains('@') || !text.contains('.')) {
-                return 'Enter a valid email';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _passwordController,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              prefixIcon: Icon(Icons.lock_outline),
-            ),
-            validator: (value) {
-              if ((value ?? '').length < 6) return 'Minimum 6 characters';
-              return null;
-            },
-          ),
-          _ErrorText(message: auth.errorMessage),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: auth.isLoading ? null : _submitAdmin,
-            icon: auth.isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.login_outlined),
-            label: Text(_registerMode ? 'Create Admin Account' : 'Login Admin'),
-          ),
-          TextButton(
-            onPressed: auth.isLoading
-                ? null
-                : () => setState(() => _registerMode = !_registerMode),
-            child: Text(
-              _registerMode
-                  ? 'Already have an admin account? Login'
-                  : 'Create admin account',
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

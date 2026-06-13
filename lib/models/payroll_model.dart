@@ -32,6 +32,7 @@ class PayrollModel {
     this.nonTaxableDeductionNote,
     this.slipStatus = 'Unpaid',
     this.paidVia,
+    this.checkNumber,
     this.employerCpp = 0,
     this.employerEi = 0,
   });
@@ -68,6 +69,7 @@ class PayrollModel {
   final String? nonTaxableDeductionNote;
   final String slipStatus;
   final String? paidVia;
+  final String? checkNumber;
   final double employerCpp;
   final double employerEi;
 
@@ -120,6 +122,7 @@ class PayrollModel {
       nonTaxableDeductionNote: map['nonTaxableDeductionNote'] as String?,
       slipStatus: map['slipStatus'] as String? ?? 'Unpaid',
       paidVia: map['paidVia'] as String?,
+      checkNumber: map['checkNumber'] as String?,
       employerCpp: (map['employerCpp'] as num? ?? 0).toDouble(),
       employerEi: (map['employerEi'] as num? ?? 0).toDouble(),
     );
@@ -159,6 +162,7 @@ class PayrollModel {
       'nonTaxableDeductionNote': nonTaxableDeductionNote,
       'slipStatus': slipStatus,
       'paidVia': paidVia,
+      'checkNumber': checkNumber,
       'employerCpp': employerCpp,
       'employerEi': employerEi,
     };

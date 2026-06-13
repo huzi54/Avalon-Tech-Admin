@@ -24,6 +24,31 @@ class EmployeeProvider extends ChangeNotifier {
     return List.unmodifiable(reports);
   }
 
+  double attendanceHoursForPeriod({
+    required String employeeId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) {
+    final reports = _weeklyReports[employeeId];
+    if (reports == null) return 0;
+
+    final start = DateTime(startDate.year, startDate.month, startDate.day);
+    final end = DateTime(endDate.year, endDate.month, endDate.day);
+    final from = start.isBefore(end) ? start : end;
+    final to = start.isBefore(end) ? end : start;
+    var hours = 0.0;
+
+    for (final report in reports) {
+      for (var index = 0; index < report.entries.length; index++) {
+        final entryDate = report.weekStart.add(Duration(days: index));
+        final date = DateTime(entryDate.year, entryDate.month, entryDate.day);
+        if (date.isBefore(from) || date.isAfter(to)) continue;
+        hours += report.entries[index].workingHours;
+      }
+    }
+    return hours;
+  }
+
   DailyWorkEntry? dailyEntryForDate({
     required String employeeId,
     required DateTime date,

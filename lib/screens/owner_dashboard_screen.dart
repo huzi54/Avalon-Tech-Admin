@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../app_config.dart';
+import '../core/localization/localization_service.dart';
 import '../models/payroll_model.dart';
 import '../models/remittance_model.dart';
+import '../providers/app_settings_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/dashboard_navigation_provider.dart';
 import '../providers/employee_provider.dart';
 import '../providers/payroll_provider.dart';
 import '../utils/date_time_helper.dart';
@@ -16,66 +19,48 @@ import 'payroll_slips_screen.dart';
 import 'remittance_screen.dart';
 import 'salary_calculator_screen.dart';
 
-class OwnerDashboardScreen extends StatefulWidget {
+class OwnerDashboardScreen extends StatelessWidget {
   const OwnerDashboardScreen({super.key});
 
   static const routeName = '/';
 
   @override
-  State<OwnerDashboardScreen> createState() => _OwnerDashboardScreenState();
-}
-
-enum _DashboardSection {
-  dashboard,
-  employees,
-  createEmployee,
-  calculator,
-  payroll,
-  remittance,
-  settings,
-}
-
-class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
-  _DashboardSection _selectedSection = _DashboardSection.dashboard;
-
-  void _selectSection(_DashboardSection section) {
-    setState(() => _selectedSection = section);
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final navigation = context.watch<DashboardNavigationProvider>();
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFD),
       body: Row(
         children: [
           _Sidebar(
-            selectedSection: _selectedSection,
-            onSelected: _selectSection,
+            selectedSection: navigation.selectedSection,
+            onSelected: navigation.select,
           ),
           const VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
-          Expanded(child: _buildMainContent()),
+          Expanded(child: _buildMainContent(context, navigation)),
         ],
       ),
     );
   }
 
-  Widget _buildMainContent() {
-    return switch (_selectedSection) {
-      _DashboardSection.dashboard => _DashboardHome(
-        onSectionSelected: _selectSection,
+  Widget _buildMainContent(
+    BuildContext context,
+    DashboardNavigationProvider navigation,
+  ) {
+    return switch (navigation.selectedSection) {
+      DashboardSection.dashboard => _DashboardHome(
+        onSectionSelected: navigation.select,
       ),
-      _DashboardSection.employees => EmployeeInfoScreen(
+      DashboardSection.employees => EmployeeInfoScreen(
         onCreateEmployee: () =>
-            _selectSection(_DashboardSection.createEmployee),
+            navigation.select(DashboardSection.createEmployee),
       ),
-      _DashboardSection.createEmployee => CreateEmployeeScreen(
-        onBack: () => _selectSection(_DashboardSection.employees),
-        onSaved: (_) => _selectSection(_DashboardSection.employees),
+      DashboardSection.createEmployee => CreateEmployeeScreen(
+        onBack: () => navigation.select(DashboardSection.employees),
+        onSaved: (_) => navigation.select(DashboardSection.employees),
       ),
-      _DashboardSection.calculator => const SalaryCalculatorScreen(),
-      _DashboardSection.payroll => const PayrollSlipsScreen(),
-      _DashboardSection.remittance => const RemittanceScreen(),
-      _DashboardSection.settings => const _SettingsContent(),
+      DashboardSection.calculator => const SalaryCalculatorScreen(),
+      DashboardSection.payroll => const PayrollSlipsScreen(),
+      DashboardSection.remittance => const RemittanceScreen(),
+      DashboardSection.settings => const _SettingsContent(),
     };
   }
 }
@@ -83,7 +68,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 class _DashboardHome extends StatelessWidget {
   const _DashboardHome({required this.onSectionSelected});
 
-  final ValueChanged<_DashboardSection> onSectionSelected;
+  final ValueChanged<DashboardSection> onSectionSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +127,7 @@ class _DashboardHome extends StatelessWidget {
                           icon: Icons.groups_rounded,
                           color: const Color(0xFF2563EB),
                           onTap: () => onSectionSelected(
-                            _DashboardSection.createEmployee,
+                            DashboardSection.createEmployee,
                           ),
                         ),
                       ),
@@ -154,7 +139,7 @@ class _DashboardHome extends StatelessWidget {
                           icon: Icons.calculate_rounded,
                           color: const Color(0xFF16A34A),
                           onTap: () =>
-                              onSectionSelected(_DashboardSection.calculator),
+                              onSectionSelected(DashboardSection.calculator),
                         ),
                       ),
                     ],
@@ -181,7 +166,7 @@ class _DashboardHome extends StatelessWidget {
                             icon: Icons.group_outlined,
                             color: const Color(0xFF2563EB),
                             onTap: () =>
-                                onSectionSelected(_DashboardSection.employees),
+                                onSectionSelected(DashboardSection.employees),
                           ),
                           _SummaryTile(
                             width: width.clamp(150, 220).toDouble(),
@@ -190,7 +175,7 @@ class _DashboardHome extends StatelessWidget {
                             icon: Icons.attach_money,
                             color: const Color(0xFF16A34A),
                             onTap: () =>
-                                onSectionSelected(_DashboardSection.payroll),
+                                onSectionSelected(DashboardSection.payroll),
                           ),
                           _SummaryTile(
                             width: width.clamp(150, 220).toDouble(),
@@ -199,7 +184,7 @@ class _DashboardHome extends StatelessWidget {
                             icon: Icons.description_outlined,
                             color: const Color(0xFF9333EA),
                             onTap: () =>
-                                onSectionSelected(_DashboardSection.payroll),
+                                onSectionSelected(DashboardSection.payroll),
                           ),
                           _SummaryTile(
                             width: width.clamp(150, 220).toDouble(),
@@ -208,7 +193,7 @@ class _DashboardHome extends StatelessWidget {
                             icon: Icons.pending_actions_outlined,
                             color: const Color(0xFFF97316),
                             onTap: () =>
-                                onSectionSelected(_DashboardSection.payroll),
+                                onSectionSelected(DashboardSection.payroll),
                           ),
                           _SummaryTile(
                             width: width.clamp(150, 220).toDouble(),
@@ -217,7 +202,7 @@ class _DashboardHome extends StatelessWidget {
                             icon: Icons.account_balance_outlined,
                             color: const Color(0xFF2563EB),
                             onTap: () =>
-                                onSectionSelected(_DashboardSection.remittance),
+                                onSectionSelected(DashboardSection.remittance),
                           ),
                           _SummaryTile(
                             width: width.clamp(150, 220).toDouble(),
@@ -226,7 +211,7 @@ class _DashboardHome extends StatelessWidget {
                             icon: Icons.warning_amber_rounded,
                             color: const Color(0xFFEF4444),
                             onTap: () =>
-                                onSectionSelected(_DashboardSection.remittance),
+                                onSectionSelected(DashboardSection.remittance),
                           ),
                         ],
                       );
@@ -236,13 +221,13 @@ class _DashboardHome extends StatelessWidget {
                   _RemittancePanel(
                     remittances: remittances.take(5).toList(),
                     onViewAll: () =>
-                        onSectionSelected(_DashboardSection.remittance),
+                        onSectionSelected(DashboardSection.remittance),
                   ),
                   const SizedBox(height: 22),
                   _PayrollPanel(
                     payrolls: payrolls.take(5).toList(),
                     onViewAll: () =>
-                        onSectionSelected(_DashboardSection.payroll),
+                        onSectionSelected(DashboardSection.payroll),
                   ),
                 ],
               ),
@@ -259,9 +244,120 @@ class _SettingsContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settings = context.watch<AppSettingsProvider>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: const Center(child: Text('Settings screen coming soon.')),
+      appBar: AppBar(title: Text(context.tr('settings'))),
+      body: ListView(
+        padding: const EdgeInsets.all(28),
+        children: [
+          Text(
+            context.tr('appearance'),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  DropdownButtonFormField<ThemeMode>(
+                    initialValue: settings.themeMode,
+                    decoration: InputDecoration(
+                      labelText: context.tr('theme'),
+                      prefixIcon: const Icon(Icons.contrast_outlined),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: ThemeMode.light,
+                        child: Text(context.tr('light')),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.dark,
+                        child: Text(context.tr('dark')),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.system,
+                        child: Text(context.tr('system')),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) settings.setThemeMode(value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: settings.locale.languageCode,
+                    decoration: InputDecoration(
+                      labelText: context.tr('language'),
+                      prefixIcon: const Icon(Icons.language_outlined),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'en',
+                        child: Text(context.tr('english')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'fr',
+                        child: Text(context.tr('frenchCanada')),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        settings.setLocale(Locale(value, 'CA'));
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            context.tr('support'),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.support_agent_outlined),
+              title: Text(context.tr('contactSupport')),
+              subtitle: Text(
+                '${context.tr('supportDescription')}\n${AppConfig.supportEmail}',
+              ),
+              isThreeLine: true,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.workspace_premium_outlined),
+              title: Text(context.tr('subscription')),
+              subtitle: Text(context.tr('subscriptionManagedByAdmin')),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                await context.read<AuthProvider>().logout();
+                if (!context.mounted) return;
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  LoginScreen.routeName,
+                  (route) => false,
+                );
+              },
+              icon: const Icon(Icons.logout_outlined),
+              label: Text(context.tr('logout')),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -269,8 +365,8 @@ class _SettingsContent extends StatelessWidget {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({required this.selectedSection, required this.onSelected});
 
-  final _DashboardSection selectedSection;
-  final ValueChanged<_DashboardSection> onSelected;
+  final DashboardSection selectedSection;
+  final ValueChanged<DashboardSection> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -317,37 +413,37 @@ class _Sidebar extends StatelessWidget {
             const SizedBox(height: 42),
             _NavItem(
               icon: Icons.home_outlined,
-              label: 'Dashboard',
-              selected: selectedSection == _DashboardSection.dashboard,
-              onTap: () => onSelected(_DashboardSection.dashboard),
+              label: context.tr('dashboard'),
+              selected: selectedSection == DashboardSection.dashboard,
+              onTap: () => onSelected(DashboardSection.dashboard),
             ),
             _NavItem(
               icon: Icons.people_alt_outlined,
-              label: 'Employees',
+              label: context.tr('employees'),
               selected:
-                  selectedSection == _DashboardSection.employees ||
-                  selectedSection == _DashboardSection.createEmployee,
-              onTap: () => onSelected(_DashboardSection.employees),
+                  selectedSection == DashboardSection.employees ||
+                  selectedSection == DashboardSection.createEmployee,
+              onTap: () => onSelected(DashboardSection.employees),
             ),
             _NavItem(
               icon: Icons.receipt_long_outlined,
-              label: 'Payroll',
+              label: context.tr('payroll'),
               selected:
-                  selectedSection == _DashboardSection.payroll ||
-                  selectedSection == _DashboardSection.calculator,
-              onTap: () => onSelected(_DashboardSection.payroll),
+                  selectedSection == DashboardSection.payroll ||
+                  selectedSection == DashboardSection.calculator,
+              onTap: () => onSelected(DashboardSection.payroll),
             ),
             _NavItem(
               icon: Icons.account_balance_outlined,
-              label: 'Remittance',
-              selected: selectedSection == _DashboardSection.remittance,
-              onTap: () => onSelected(_DashboardSection.remittance),
+              label: context.tr('remittance'),
+              selected: selectedSection == DashboardSection.remittance,
+              onTap: () => onSelected(DashboardSection.remittance),
             ),
             _NavItem(
               icon: Icons.settings_outlined,
-              label: 'Settings',
-              selected: selectedSection == _DashboardSection.settings,
-              onTap: () => onSelected(_DashboardSection.settings),
+              label: context.tr('settings'),
+              selected: selectedSection == DashboardSection.settings,
+              onTap: () => onSelected(DashboardSection.settings),
             ),
             const Spacer(),
             Text(

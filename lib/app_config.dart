@@ -9,6 +9,7 @@ class AppConfig {
       '31 Peet St Suite 105, St. John\'s, NL A1B 3W8, Canada';
   static const String logoPath = 'assets/images/logo.png';
   static const String defaultLanguage = 'en';
+  static const String supportEmail = 'support@avalontechandtailor.ca';
   static const String province = 'Newfoundland and Labrador';
 
   static const Color primaryColor = Color(0xFF155E63);

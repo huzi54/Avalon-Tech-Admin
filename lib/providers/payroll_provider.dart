@@ -20,7 +20,6 @@ class PayrollProvider extends ChangeNotifier {
   final List<PayrollModel> _payrolls = [];
   final List<RemittanceModel> _remittances = [];
   final Map<String, String> _otherTaxableLabels = {};
-  final Map<String, String> _checkNumbers = {};
 
   PayrollModel? currentPreview;
   bool isLoading = false;
@@ -31,8 +30,6 @@ class PayrollProvider extends ChangeNotifier {
 
   String otherTaxableLabel(String payrollId) =>
       _otherTaxableLabels[payrollId] ?? 'Other Taxable Income';
-
-  String? checkNumber(String payrollId) => _checkNumbers[payrollId];
 
   Future<void> loadPayrolls() async {
     isLoading = true;
@@ -138,15 +135,15 @@ class PayrollProvider extends ChangeNotifier {
       original,
       slipStatus: slipStatus,
       paidVia: slipStatus.toLowerCase() == 'paid' ? paidVia : null,
+      checkNumber:
+          slipStatus.toLowerCase() == 'paid' &&
+              paidVia?.toLowerCase() == 'check'
+          ? checkNumber?.trim()
+          : null,
     );
 
     await _run(() => _firebaseService.savePayroll(updated));
     _payrolls[index] = updated;
-    if (checkNumber?.trim().isNotEmpty == true) {
-      _checkNumbers[payrollId] = checkNumber!.trim();
-    } else if (paidVia?.toLowerCase() != 'cheque') {
-      _checkNumbers.remove(payrollId);
-    }
     if (currentPreview?.id == payrollId) currentPreview = updated;
 
     final remittanceIndex = _remittances.indexWhere(
@@ -155,6 +152,8 @@ class PayrollProvider extends ChangeNotifier {
     if (remittanceIndex != -1) {
       final remittance = _remittances[remittanceIndex].copyWith(
         status: slipStatus.toLowerCase() == 'paid' ? 'Paid' : 'Unpaid',
+        paidVia: paidVia,
+        clearPaidVia: slipStatus.toLowerCase() != 'paid',
       );
       await _run(() => _firebaseService.saveRemittance(remittance));
       _remittances[remittanceIndex] = remittance;
@@ -201,15 +200,17 @@ class PayrollProvider extends ChangeNotifier {
       updated,
       slipStatus: original.slipStatus,
       paidVia: original.paidVia,
+      checkNumber: original.checkNumber,
     );
-    final remittanceStatus = _remittances
+    final existingRemittance = _remittances
         .where((remittance) => remittance.id == payrollId)
-        .firstOrNull
-        ?.status;
-    final remittance = _remittanceFromPayroll(
-      preservedPayment,
-      employee,
-    ).copyWith(status: remittanceStatus);
+        .firstOrNull;
+    final remittance = _remittanceFromPayroll(preservedPayment, employee)
+        .copyWith(
+          status: existingRemittance?.status,
+          paidVia: existingRemittance?.paidVia,
+          notes: existingRemittance?.notes,
+        );
 
     await _savePayrollAndRemittance(preservedPayment, remittance);
     _payrolls[index] = preservedPayment;
@@ -239,16 +240,60 @@ class PayrollProvider extends ChangeNotifier {
     );
     if (index == -1) return;
 
-    final updated = _remittances[index].copyWith(status: status);
+    final updated = _remittances[index].copyWith(
+      status: status,
+      clearPaidVia: status.toLowerCase() != 'paid',
+    );
     await _run(() => _firebaseService.saveRemittance(updated));
     _remittances[index] = updated;
     notifyListeners();
+  }
+
+  Future<void> updateRemittancePayment({
+    required String remittanceId,
+    required String status,
+    String? paidVia,
+  }) async {
+    final index = _remittances.indexWhere(
+      (remittance) => remittance.id == remittanceId,
+    );
+    if (index == -1) return;
+
+    final isPaid = status.toLowerCase() == 'paid';
+    final updated = _remittances[index].copyWith(
+      status: status,
+      paidVia: isPaid ? paidVia : null,
+      clearPaidVia: !isPaid,
+    );
+    _remittances[index] = updated;
+    notifyListeners();
+    await _run(() => _firebaseService.saveRemittance(updated));
+  }
+
+  Future<void> updateRemittanceNotes({
+    required String remittanceId,
+    required String notes,
+  }) async {
+    final index = _remittances.indexWhere(
+      (remittance) => remittance.id == remittanceId,
+    );
+    if (index == -1) return;
+
+    final trimmed = notes.trim();
+    final updated = _remittances[index].copyWith(
+      notes: trimmed,
+      clearNotes: trimmed.isEmpty,
+    );
+    _remittances[index] = updated;
+    notifyListeners();
+    await _run(() => _firebaseService.saveRemittance(updated));
   }
 
   PayrollModel _copyPayroll(
     PayrollModel original, {
     required String slipStatus,
     String? paidVia,
+    String? checkNumber,
   }) {
     return PayrollModel(
       id: original.id,
@@ -283,6 +328,7 @@ class PayrollProvider extends ChangeNotifier {
       nonTaxableDeductionNote: original.nonTaxableDeductionNote,
       slipStatus: slipStatus,
       paidVia: paidVia,
+      checkNumber: checkNumber,
       employerCpp: original.employerCpp,
       employerEi: original.employerEi,
     );

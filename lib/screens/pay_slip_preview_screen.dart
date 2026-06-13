@@ -24,7 +24,12 @@ class _PaySlipPreviewScreenState extends State<PaySlipPreviewScreen> {
   final _checkNumberController = TextEditingController();
 
   static const _statusOptions = ['Unpaid', 'Paid'];
-  static const _paidViaOptions = ['EMT', 'Cheque', 'Cash'];
+  static const _paidViaOptions = [
+    'E-Transfer',
+    'Direct Deposit',
+    'Cash',
+    'Check',
+  ];
 
   @override
   void dispose() {
@@ -47,9 +52,9 @@ class _PaySlipPreviewScreenState extends State<PaySlipPreviewScreen> {
 
     final employee = employeeProvider.findById(payroll.employeeId);
     final taxableLabel = payrollProvider.otherTaxableLabel(payroll.id);
-    final checkNumber = payrollProvider.checkNumber(payroll.id);
-    if (_checkNumberController.text.isEmpty && checkNumber != null) {
-      _checkNumberController.text = checkNumber;
+    if (_checkNumberController.text.isEmpty &&
+        payroll.checkNumber?.isNotEmpty == true) {
+      _checkNumberController.text = payroll.checkNumber!;
     }
 
     return DefaultTabController(
@@ -74,7 +79,14 @@ class _PaySlipPreviewScreenState extends State<PaySlipPreviewScreen> {
         ),
         body: TabBarView(
           children: [
-            _OwnerPreview(payroll: payroll),
+            _OwnerPreview(
+              payroll: payroll,
+              employee: employee,
+              taxableLabel: taxableLabel,
+              checkNumberController: _checkNumberController,
+              paidViaOptions: _paidViaOptions,
+              statusOptions: _statusOptions,
+            ),
             _EmployeeSlipPreview(
               payroll: payroll,
               employee: employee,
@@ -113,9 +125,21 @@ class _PaySlipPreviewScreenState extends State<PaySlipPreviewScreen> {
 }
 
 class _OwnerPreview extends StatelessWidget {
-  const _OwnerPreview({required this.payroll});
+  const _OwnerPreview({
+    required this.payroll,
+    required this.employee,
+    required this.taxableLabel,
+    required this.checkNumberController,
+    required this.paidViaOptions,
+    required this.statusOptions,
+  });
 
   final PayrollModel payroll;
+  final EmployeeModel? employee;
+  final String taxableLabel;
+  final TextEditingController checkNumberController;
+  final List<String> paidViaOptions;
+  final List<String> statusOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -133,6 +157,13 @@ class _OwnerPreview extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 16),
+              _PaymentControls(
+                payroll: payroll,
+                checkNumberController: checkNumberController,
+                paidViaOptions: paidViaOptions,
+                statusOptions: statusOptions,
+              ),
+              const SizedBox(height: 24),
               _InfoRow(label: 'Employee ID', value: payroll.employeeId),
               _InfoRow(
                 label: 'Final Payable',
@@ -159,7 +190,13 @@ class _OwnerPreview extends StatelessWidget {
         const VerticalDivider(width: 1),
         Expanded(
           child: PdfPreview(
-            build: (_) => pdfService.buildPaySlip(payroll),
+            build: (_) => pdfService.buildEmployeePaySlip(
+              payroll,
+              designation: employee?.role ?? 'Employee',
+              otherTaxableLabel: taxableLabel,
+              checkNumber: payroll.checkNumber,
+              includeOwnerAnnualDetails: true,
+            ),
             canChangeOrientation: false,
             canChangePageFormat: false,
             allowSharing: false,
@@ -191,11 +228,6 @@ class _EmployeeSlipPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pdfService = const PdfService();
-    final paidVia = paidViaOptions.contains(payroll.paidVia)
-        ? payroll.paidVia
-        : paidViaOptions.first;
-    final showCheque = payroll.slipStatus == 'Paid' && paidVia == 'Cheque';
-
     return Row(
       children: [
         SizedBox(
@@ -208,62 +240,12 @@ class _EmployeeSlipPreview extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: payroll.slipStatus,
-                decoration: const InputDecoration(labelText: 'Payment Status'),
-                items: [
-                  for (final status in statusOptions)
-                    DropdownMenuItem(value: status, child: Text(status)),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  context.read<PayrollProvider>().updateSlipPayment(
-                    payrollId: payroll.id,
-                    slipStatus: value,
-                    paidVia: value == 'Paid' ? paidVia : null,
-                    checkNumber: checkNumberController.text,
-                  );
-                },
+              _PaymentControls(
+                payroll: payroll,
+                checkNumberController: checkNumberController,
+                paidViaOptions: paidViaOptions,
+                statusOptions: statusOptions,
               ),
-              if (payroll.slipStatus == 'Paid') ...[
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: paidVia,
-                  decoration: const InputDecoration(
-                    labelText: 'Payment Method',
-                  ),
-                  items: [
-                    for (final option in paidViaOptions)
-                      DropdownMenuItem(value: option, child: Text(option)),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    context.read<PayrollProvider>().updateSlipPayment(
-                      payrollId: payroll.id,
-                      slipStatus: 'Paid',
-                      paidVia: value,
-                      checkNumber: checkNumberController.text,
-                    );
-                  },
-                ),
-              ],
-              if (showCheque) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: checkNumberController,
-                  inputFormatters: [AppInputFormatters.digitsOnly],
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Cheque Number'),
-                  onChanged: (value) {
-                    context.read<PayrollProvider>().updateSlipPayment(
-                      payrollId: payroll.id,
-                      slipStatus: 'Paid',
-                      paidVia: 'Cheque',
-                      checkNumber: value,
-                    );
-                  },
-                ),
-              ],
               const SizedBox(height: 24),
               _InfoRow(label: 'Name', value: payroll.employeeName),
               _InfoRow(label: 'Employee ID', value: payroll.employeeId),
@@ -286,7 +268,7 @@ class _EmployeeSlipPreview extends StatelessWidget {
               payroll,
               designation: employee?.role ?? 'Employee',
               otherTaxableLabel: taxableLabel,
-              checkNumber: checkNumberController.text,
+              checkNumber: payroll.checkNumber,
             ),
             canChangeOrientation: false,
             canChangePageFormat: false,
@@ -294,6 +276,93 @@ class _EmployeeSlipPreview extends StatelessWidget {
             pdfFileName: 'employee-payslip-${payroll.employeeId}.pdf',
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _PaymentControls extends StatelessWidget {
+  const _PaymentControls({
+    required this.payroll,
+    required this.checkNumberController,
+    required this.paidViaOptions,
+    required this.statusOptions,
+  });
+
+  final PayrollModel payroll;
+  final TextEditingController checkNumberController;
+  final List<String> paidViaOptions;
+  final List<String> statusOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    final paidVia = paidViaOptions.contains(payroll.paidVia)
+        ? payroll.paidVia!
+        : paidViaOptions.first;
+    final showCheck = payroll.slipStatus == 'Paid' && paidVia == 'Check';
+
+    return Column(
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: payroll.slipStatus,
+          decoration: const InputDecoration(labelText: 'Payment Status'),
+          items: [
+            for (final status in statusOptions)
+              DropdownMenuItem(value: status, child: Text(status)),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            if (value != 'Paid') checkNumberController.clear();
+            context.read<PayrollProvider>().updateSlipPayment(
+              payrollId: payroll.id,
+              slipStatus: value,
+              paidVia: value == 'Paid' ? paidVia : null,
+              checkNumber: value == 'Paid' && paidVia == 'Check'
+                  ? checkNumberController.text
+                  : null,
+            );
+          },
+        ),
+        if (payroll.slipStatus == 'Paid') ...[
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: paidVia,
+            decoration: const InputDecoration(labelText: 'Paid Via'),
+            items: [
+              for (final option in paidViaOptions)
+                DropdownMenuItem(value: option, child: Text(option)),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              if (value != 'Check') checkNumberController.clear();
+              context.read<PayrollProvider>().updateSlipPayment(
+                payrollId: payroll.id,
+                slipStatus: 'Paid',
+                paidVia: value,
+                checkNumber: value == 'Check'
+                    ? checkNumberController.text
+                    : null,
+              );
+            },
+          ),
+        ],
+        if (showCheck) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: checkNumberController,
+            inputFormatters: [AppInputFormatters.digitsOnly],
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Check Number'),
+            onChanged: (value) {
+              context.read<PayrollProvider>().updateSlipPayment(
+                payrollId: payroll.id,
+                slipStatus: 'Paid',
+                paidVia: 'Check',
+                checkNumber: value,
+              );
+            },
+          ),
+        ],
       ],
     );
   }

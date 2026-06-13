@@ -60,6 +60,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   DateTime _periodEnd = DateTime.now();
   DateTime _payDate = DateTime.now();
   bool _handledArgs = false;
+  bool _hoursEditedManually = false;
 
   static const _taxableTypeOptions = [
     'Vacation Pay',
@@ -81,7 +82,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
       final employee = context.read<EmployeeProvider>().findById(
         args.employeeId,
       );
-      _selectEmployee(employee);
+      _selectedEmployee = employee;
       _editingPayrollId = args.payrollId;
       final payroll = args.payrollId == null
           ? null
@@ -92,6 +93,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
                 .firstOrNull;
       if (payroll != null) {
         _hoursController.text = payroll.hours.toStringAsFixed(2);
+        _hoursEditedManually = true;
         _rateController.text = payroll.rate.toStringAsFixed(2);
         _periodsController.text = payroll.numberOfPayPeriods.toString();
         _taxableController.text = payroll.otherTaxableIncome.toStringAsFixed(2);
@@ -112,6 +114,8 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
           _otherTaxableType = 'Custom';
           _customTaxableTypeController.text = label;
         }
+      } else {
+        _fillHoursFromAttendance(force: true);
       }
     } else if (employees.isNotEmpty) {
       _selectEmployee(employees.first);
@@ -134,7 +138,18 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   void _selectEmployee(EmployeeModel? employee) {
     setState(() {
       _selectedEmployee = employee;
+      _hoursEditedManually = false;
     });
+    _fillHoursFromAttendance(force: true);
+  }
+
+  void _fillHoursFromAttendance({bool force = false}) {
+    final employee = _selectedEmployee;
+    if (employee == null || _editingPayrollId != null) return;
+    if (!force && _hoursEditedManually) return;
+
+    final hours = _attendanceHours(context.read<EmployeeProvider>());
+    if (hours > 0) _hoursController.text = hours.toStringAsFixed(2);
   }
 
   void _setFrequency(String? value) {
@@ -246,6 +261,16 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
     return double.tryParse(controller.text.trim()) ?? 0;
   }
 
+  double _attendanceHours(EmployeeProvider provider) {
+    final employee = _selectedEmployee;
+    if (employee == null) return 0;
+    return provider.attendanceHoursForPeriod(
+      employeeId: employee.id,
+      startDate: _periodStart,
+      endDate: _periodEnd,
+    );
+  }
+
   void _openPaySlipPreview(PayrollModel payroll) {
     context.read<PayrollProvider>().preview(payroll);
     Navigator.of(context).push(
@@ -330,10 +355,12 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               const SizedBox(height: 12),
               _dateButton('Pay Period Start', _periodStart, (value) {
                 _periodStart = value;
+                _fillHoursFromAttendance();
               }),
               const SizedBox(height: 12),
               _dateButton('Pay Period End', _periodEnd, (value) {
                 _periodEnd = value;
+                _fillHoursFromAttendance();
               }),
               const SizedBox(height: 12),
               _dateButton('Pay Date', _payDate, (value) {
@@ -345,8 +372,12 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
                 label: 'Total / Working Hours',
                 keyboardType: TextInputType.number,
                 inputFormatters: [AppInputFormatters.number],
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => setState(() {
+                  _hoursEditedManually = true;
+                }),
               ),
+              const SizedBox(height: 8),
+              _attendanceHoursPanel(provider),
               const SizedBox(height: 12),
               CustomTextField(
                 controller: _rateController,
@@ -457,6 +488,45 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
       label: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [Text(label), Text(DateTimeHelper.formatDate(value))],
+      ),
+    );
+  }
+
+  Widget _attendanceHoursPanel(EmployeeProvider provider) {
+    final hours = _attendanceHours(provider);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.schedule_outlined, color: Color(0xFF2563EB)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Attendance hours for selected period: '
+              '${hours.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Color(0xFF1E3A8A),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: hours <= 0
+                ? null
+                : () {
+                    setState(() {
+                      _hoursController.text = hours.toStringAsFixed(2);
+                      _hoursEditedManually = false;
+                    });
+                  },
+            child: const Text('Use'),
+          ),
+        ],
       ),
     );
   }
