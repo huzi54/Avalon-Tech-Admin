@@ -43,6 +43,8 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   final _periodsController = TextEditingController(text: '26');
   final _taxableController = TextEditingController(text: '0.00');
   final _customTaxableTypeController = TextEditingController();
+  final _nonTaxableIncomeController = TextEditingController(text: '0.00');
+  final _otherIncomeReasonController = TextEditingController();
   final _nonTaxableController = TextEditingController(text: '0.00');
   final _otherReasonController = TextEditingController();
   final _nonTaxableNoteController = TextEditingController();
@@ -50,6 +52,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   EmployeeModel? _selectedEmployee;
   String _payFrequency = 'Biweekly';
   String _otherTaxableType = 'Vacation Pay';
+  String _nonTaxableIncomeReason = 'Balance carried forward';
   String _deductionReason = 'Advance';
   String? _editingPayrollId;
   DateTime _periodStart = DateTime(
@@ -61,6 +64,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   DateTime _payDate = DateTime.now();
   bool _handledArgs = false;
   bool _hoursEditedManually = false;
+  bool _rateEditedManually = false;
 
   static const _taxableTypeOptions = [
     'Vacation Pay',
@@ -83,6 +87,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
         args.employeeId,
       );
       _selectedEmployee = employee;
+      _rateController.text = employee?.hourlyRate.toStringAsFixed(2) ?? '';
       _editingPayrollId = args.payrollId;
       final payroll = args.payrollId == null
           ? null
@@ -94,9 +99,20 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
       if (payroll != null) {
         _hoursController.text = payroll.hours.toStringAsFixed(2);
         _hoursEditedManually = true;
+        _rateEditedManually = true;
         _rateController.text = payroll.rate.toStringAsFixed(2);
         _periodsController.text = payroll.numberOfPayPeriods.toString();
         _taxableController.text = payroll.otherTaxableIncome.toStringAsFixed(2);
+        _nonTaxableIncomeController.text = payroll.otherNonTaxableIncome
+            .toStringAsFixed(2);
+        final incomeReason =
+            payroll.nonTaxableIncomeReason ?? 'Balance carried forward';
+        if (incomeReason == 'Balance carried forward') {
+          _nonTaxableIncomeReason = incomeReason;
+        } else {
+          _nonTaxableIncomeReason = 'Other';
+          _otherIncomeReasonController.text = incomeReason;
+        }
         _nonTaxableController.text = payroll.otherNonTaxableDeduction
             .toStringAsFixed(2);
         _periodStart = payroll.payPeriodStart;
@@ -115,7 +131,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
           _customTaxableTypeController.text = label;
         }
       } else {
-        _fillHoursFromAttendance(force: true);
+        _fillFromAttendance(force: true);
       }
     } else if (employees.isNotEmpty) {
       _selectEmployee(employees.first);
@@ -129,6 +145,8 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
     _periodsController.dispose();
     _taxableController.dispose();
     _customTaxableTypeController.dispose();
+    _nonTaxableIncomeController.dispose();
+    _otherIncomeReasonController.dispose();
     _nonTaxableController.dispose();
     _otherReasonController.dispose();
     _nonTaxableNoteController.dispose();
@@ -139,17 +157,25 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
     setState(() {
       _selectedEmployee = employee;
       _hoursEditedManually = false;
+      _rateEditedManually = false;
+      _rateController.text = employee?.hourlyRate.toStringAsFixed(2) ?? '';
     });
-    _fillHoursFromAttendance(force: true);
+    _fillFromAttendance(force: true);
   }
 
-  void _fillHoursFromAttendance({bool force = false}) {
+  void _fillFromAttendance({bool force = false}) {
     final employee = _selectedEmployee;
     if (employee == null || _editingPayrollId != null) return;
-    if (!force && _hoursEditedManually) return;
 
-    final hours = _attendanceHours(context.read<EmployeeProvider>());
-    if (hours > 0) _hoursController.text = hours.toStringAsFixed(2);
+    final summary = _attendanceSummary(context.read<EmployeeProvider>());
+    if (force || !_hoursEditedManually) {
+      _hoursController.text = summary.totalHours.toStringAsFixed(2);
+      _hoursEditedManually = false;
+    }
+    if (force || !_rateEditedManually) {
+      _rateController.text = summary.effectiveHourlyRate.toStringAsFixed(4);
+      _rateEditedManually = false;
+    }
   }
 
   void _setFrequency(String? value) {
@@ -179,7 +205,9 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
       hours: _number(_hoursController),
       rate: _number(_rateController),
       numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
+      regularIncomeOverride: _attendanceRegularIncomeOverride(),
       otherTaxableIncome: _number(_taxableController),
+      otherNonTaxableIncome: _number(_nonTaxableIncomeController),
       otherNonTaxableDeduction: _number(_nonTaxableController),
     );
   }
@@ -202,8 +230,13 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
             payDate: _payDate,
             payFrequency: _payFrequency,
             numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
+            regularIncomeOverride: _attendanceRegularIncomeOverride(),
             otherTaxableIncome: _number(_taxableController),
             otherTaxableLabel: taxableLabel,
+            otherNonTaxableIncome: _number(_nonTaxableIncomeController),
+            nonTaxableIncomeReason: _nonTaxableIncomeReason == 'Other'
+                ? _otherIncomeReasonController.text.trim()
+                : _nonTaxableIncomeReason,
             otherNonTaxableDeduction: _number(_nonTaxableController),
             nonTaxableDeductionReason: _deductionReason == 'Other'
                 ? _otherReasonController.text.trim()
@@ -222,8 +255,13 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
             payDate: _payDate,
             payFrequency: _payFrequency,
             numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
+            regularIncomeOverride: _attendanceRegularIncomeOverride(),
             otherTaxableIncome: _number(_taxableController),
             otherTaxableLabel: taxableLabel,
+            otherNonTaxableIncome: _number(_nonTaxableIncomeController),
+            nonTaxableIncomeReason: _nonTaxableIncomeReason == 'Other'
+                ? _otherIncomeReasonController.text.trim()
+                : _nonTaxableIncomeReason,
             otherNonTaxableDeduction: _number(_nonTaxableController),
             nonTaxableDeductionReason: _deductionReason == 'Other'
                 ? _otherReasonController.text.trim()
@@ -255,20 +293,29 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
         ],
       ),
     );
+    if (editingPayrollId != null && mounted && Navigator.canPop(context)) {
+      Navigator.pop(context, payroll);
+    }
   }
 
   double _number(TextEditingController controller) {
     return double.tryParse(controller.text.trim()) ?? 0;
   }
 
-  double _attendanceHours(EmployeeProvider provider) {
+  AttendancePayrollSummary _attendanceSummary(EmployeeProvider provider) {
     final employee = _selectedEmployee;
-    if (employee == null) return 0;
-    return provider.attendanceHoursForPeriod(
+    if (employee == null) return const AttendancePayrollSummary();
+    return provider.attendancePayrollSummary(
       employeeId: employee.id,
       startDate: _periodStart,
       endDate: _periodEnd,
     );
+  }
+
+  double? _attendanceRegularIncomeOverride() {
+    if (_hoursEditedManually || _rateEditedManually) return null;
+    final summary = _attendanceSummary(context.read<EmployeeProvider>());
+    return summary.totalHours > 0 ? summary.regularIncome : null;
   }
 
   void _openPaySlipPreview(PayrollModel payroll) {
@@ -355,12 +402,12 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               const SizedBox(height: 12),
               _dateButton('Pay Period Start', _periodStart, (value) {
                 _periodStart = value;
-                _fillHoursFromAttendance();
+                _fillFromAttendance(force: true);
               }),
               const SizedBox(height: 12),
               _dateButton('Pay Period End', _periodEnd, (value) {
                 _periodEnd = value;
-                _fillHoursFromAttendance();
+                _fillFromAttendance(force: true);
               }),
               const SizedBox(height: 12),
               _dateButton('Pay Date', _payDate, (value) {
@@ -384,8 +431,10 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
                 label: 'Hourly Rate',
                 keyboardType: TextInputType.number,
                 prefixText: r'$',
-                inputFormatters: [AppInputFormatters.number],
-                onChanged: (_) => setState(() {}),
+                inputFormatters: [AppInputFormatters.decimal4],
+                onChanged: (_) => setState(() {
+                  _rateEditedManually = true;
+                }),
               ),
               const SizedBox(height: 12),
               CustomDropdown<String>(
@@ -422,9 +471,44 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               ],
               const SizedBox(height: 12),
               CustomDropdown<String>(
+                label: 'Other Non-Taxable Income Reason',
+                value: _nonTaxableIncomeReason,
+                items: const ['Balance carried forward', 'Other'],
+                itemLabel: (value) => value,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _nonTaxableIncomeReason = value);
+                },
+              ),
+              if (_nonTaxableIncomeReason == 'Other') ...[
+                const SizedBox(height: 12),
+                CustomTextField(
+                  controller: _otherIncomeReasonController,
+                  label: 'Custom Non-Taxable Income Reason',
+                  textCapitalization: TextCapitalization.sentences,
+                ),
+              ],
+              const SizedBox(height: 12),
+              CustomTextField(
+                controller: _nonTaxableIncomeController,
+                label: 'Other Non-Taxable Income',
+                keyboardType: TextInputType.number,
+                prefixText: r'$',
+                inputFormatters: [AppInputFormatters.number],
+                onChanged: (_) => setState(() {}),
+              ),
+              _outstandingCreditPanel(),
+              const SizedBox(height: 12),
+              CustomDropdown<String>(
                 label: 'Other Non-Taxable Deduction Reason',
                 value: _deductionReason,
-                items: const ['Arrears', 'Advance', 'Purchase', 'Other'],
+                items: const [
+                  'Arrears',
+                  'Advance',
+                  'Purchase',
+                  'Balance carried forward',
+                  'Other',
+                ],
                 itemLabel: (value) => value,
                 onChanged: (value) {
                   if (value == null) return;
@@ -456,10 +540,6 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
               CustomTextField(
                 controller: _nonTaxableNoteController,
                 label: 'Non-Taxable Deduction Note (Optional)',
-                inputFormatters: [
-                  AppInputFormatters.sentenceText,
-                  AppInputFormatters.capitalizeFirst,
-                ],
                 textCapitalization: TextCapitalization.sentences,
               ),
               const SizedBox(height: 20),
@@ -493,7 +573,8 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   }
 
   Widget _attendanceHoursPanel(EmployeeProvider provider) {
-    final hours = _attendanceHours(provider);
+    final summary = _attendanceSummary(provider);
+    final hours = summary.totalHours;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -506,13 +587,24 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
           const Icon(Icons.schedule_outlined, color: Color(0xFF2563EB)),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              'Attendance hours for selected period: '
-              '${hours.toStringAsFixed(2)}',
-              style: const TextStyle(
-                color: Color(0xFF1E3A8A),
-                fontWeight: FontWeight.w700,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Attendance hours: ${hours.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Color(0xFF1E3A8A),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  'Historical effective rate: '
+                  '${DateTimeHelper.currency(summary.effectiveHourlyRate)} | '
+                  'Regular income: '
+                  '${DateTimeHelper.currency(summary.regularIncome)}',
+                  style: const TextStyle(color: Color(0xFF1E3A8A)),
+                ),
+              ],
             ),
           ),
           TextButton(
@@ -521,12 +613,65 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
                 : () {
                     setState(() {
                       _hoursController.text = hours.toStringAsFixed(2);
+                      _rateController.text = summary.effectiveHourlyRate
+                          .toStringAsFixed(4);
                       _hoursEditedManually = false;
+                      _rateEditedManually = false;
                     });
                   },
-            child: const Text('Use'),
+            child: const Text('Use Attendance'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _outstandingCreditPanel() {
+    final employee = _selectedEmployee;
+    if (employee == null || _editingPayrollId != null) {
+      return const SizedBox.shrink();
+    }
+    final credit = context.read<PayrollProvider>().outstandingEmployeeCredit(
+      employee.id,
+    );
+    if (credit <= 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          border: Border.all(color: const Color(0xFFF59E0B)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${DateTimeHelper.currency(credit)} extra was previously paid '
+              'to this employee.',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'You may optionally carry it forward as a non-taxable deduction.',
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _deductionReason = 'Balance carried forward';
+                  _nonTaxableController.text = credit.toStringAsFixed(2);
+                  _nonTaxableNoteController.text =
+                      'Recovery of extra amount paid on a previous pay slip.';
+                });
+              },
+              icon: const Icon(Icons.add_card_outlined),
+              label: const Text('Add as deduction'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -590,6 +735,10 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
                   _AmountLine(
                     'Other Non-Taxable Deduction',
                     _number(_nonTaxableController),
+                  ),
+                  _AmountLine(
+                    'Other Non-Taxable Income',
+                    _number(_nonTaxableIncomeController),
                   ),
                   _AmountLine(
                     'Final Payable Amount',

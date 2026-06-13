@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_payroll_app/models/employee_model.dart';
+import 'package:flutter_payroll_app/models/payroll_model.dart';
 import 'package:flutter_payroll_app/services/payroll_service.dart';
 
 void main() {
@@ -57,5 +58,87 @@ void main() {
     expect(payroll.netPay, closeTo(854.70, 0.01));
     expect(payroll.finalPayableAmount, closeTo(804.70, 0.01));
     expect(payroll.otherNonTaxableDeduction, 50);
+  });
+
+  test('adds other non-taxable income after statutory deductions', () {
+    final payroll = const PayrollService().calculate(
+      employee: const EmployeeModel(
+        id: 'emp-1',
+        name: 'Taylor',
+        email: 'taylor@example.com',
+        role: 'Employee',
+        hourlyRate: 25,
+      ),
+      hours: 40,
+      otherNonTaxableIncome: 75,
+      nonTaxableIncomeReason: 'Balance carried forward',
+      otherNonTaxableDeduction: 50,
+      nonTaxableDeductionNote: r'Recovery note: #A-10 / 50% approved!',
+      payPeriodStart: DateTime(2026, 6),
+      payPeriodEnd: DateTime(2026, 6, 15),
+    );
+
+    expect(payroll.netPay, closeTo(854.70, 0.01));
+    expect(payroll.finalPayableAmount, closeTo(879.70, 0.01));
+    expect(payroll.otherNonTaxableIncome, 75);
+    expect(payroll.nonTaxableIncomeReason, 'Balance carried forward');
+    expect(
+      payroll.nonTaxableDeductionNote,
+      r'Recovery note: #A-10 / 50% approved!',
+    );
+  });
+
+  test('assesses underpayment, exact payment, and overpayment', () {
+    const service = PayrollService();
+
+    expect(
+      service
+          .assessPaymentAmount(enteredAmount: 90, finalPayableAmount: 100)
+          .status,
+      PaymentAmountStatus.underpaid,
+    );
+    expect(
+      service
+          .assessPaymentAmount(enteredAmount: 100, finalPayableAmount: 100)
+          .status,
+      PaymentAmountStatus.exact,
+    );
+    final overpayment = service.assessPaymentAmount(
+      enteredAmount: 115.25,
+      finalPayableAmount: 100,
+    );
+    expect(overpayment.status, PaymentAmountStatus.overpaid);
+    expect(overpayment.difference, 15.25);
+  });
+
+  test('persists new income, payment, credit, and symbol-note fields', () {
+    final payroll = const PayrollService().calculate(
+      employee: const EmployeeModel(
+        id: 'emp-1',
+        name: 'Taylor',
+        email: 'taylor@example.com',
+        role: 'Employee',
+        hourlyRate: 25,
+      ),
+      hours: 40,
+      otherNonTaxableIncome: 75,
+      nonTaxableIncomeReason: 'Custom credit',
+      nonTaxableDeductionNote: r'Approved: #A-10, 50% + adjustment!',
+      payPeriodStart: DateTime(2026, 6),
+      payPeriodEnd: DateTime(2026, 6, 15),
+    );
+    final restored = PayrollModel.fromMap({
+      ...payroll.toMap(),
+      'paidAmount': payroll.finalPayableAmount + 10,
+      'extraCashGiven': 10,
+    });
+
+    expect(restored.otherNonTaxableIncome, 75);
+    expect(restored.nonTaxableIncomeReason, 'Custom credit');
+    expect(
+      restored.nonTaxableDeductionNote,
+      r'Approved: #A-10, 50% + adjustment!',
+    );
+    expect(restored.extraCashGiven, 10);
   });
 }

@@ -271,11 +271,14 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
       workPermitFilePath: employee.workPermitFilePath,
       offerLetterFilePath: employee.offerLetterFilePath,
       additionalDocumentPaths: employee.additionalDocumentPaths,
+      hourlyRateHistory: employee.hourlyRateHistory,
     );
 
-    await context.read<EmployeeProvider>().updateEmployee(updated);
+    final provider = context.read<EmployeeProvider>();
+    await provider.updateEmployee(updated);
+    final savedEmployee = provider.findById(updated.id) ?? updated;
     setState(() {
-      _selectedEmployee = updated;
+      _selectedEmployee = savedEmployee;
       _isEditing = false;
     });
 
@@ -539,6 +542,15 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
             employee.defaultHours.toStringAsFixed(2),
           ),
         ]),
+        if (employee.hourlyRateHistory.isNotEmpty)
+          _section('Hourly Rate History', [
+            for (final change in employee.hourlyRateHistory.reversed)
+              _detail(
+                DateTimeHelper.formatDateTime(change.effectiveAt),
+                '${DateTimeHelper.currency(change.previousRate)} -> '
+                '${DateTimeHelper.currency(change.newRate)}',
+              ),
+          ]),
         _section('Contact', [
           _detail('Email', employee.email),
           _detail('Phone', employee.phone ?? '-'),
@@ -878,7 +890,9 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
                     DataColumn(label: Text('Day')),
                     DataColumn(label: Text('Check In')),
                     DataColumn(label: Text('Check Out')),
-                    DataColumn(label: Text('Working Hours')),
+                    DataColumn(label: Text('Gross Hours')),
+                    DataColumn(label: Text('Unpaid Break')),
+                    DataColumn(label: Text('Net Hours')),
                     DataColumn(label: Text('Attendance Note')),
                   ],
                   rows: [
@@ -897,6 +911,12 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
                               onPressed: () => _pickTime(draft, checkIn: false),
                               child: Text(_formatTime(draft.checkOut)),
                             ),
+                          ),
+                          DataCell(
+                            Text(_draftGrossHours(draft).toStringAsFixed(2)),
+                          ),
+                          DataCell(
+                            Text(_draftGrossHours(draft) > 0 ? '30 min' : '-'),
                           ),
                           DataCell(Text(_draftHours(draft).toStringAsFixed(2))),
                           DataCell(
@@ -1064,6 +1084,10 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
   }
 
   double _draftHours(_DailyTimeDraft draft) {
+    return (_draftGrossHours(draft) - 0.5).clamp(0, double.infinity);
+  }
+
+  double _draftGrossHours(_DailyTimeDraft draft) {
     final start = _minutes(draft.checkIn);
     final end = _minutes(draft.checkOut);
     if (start == null || end == null) return 0;
@@ -1085,8 +1109,10 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
     final checkOut = _formatTime(_timeOfDay(entry.checkOutMinutes));
     final hours = entry.workingHours.toStringAsFixed(2);
     final note = entry.attendanceNote?.trim();
-    if (note == null || note.isEmpty) return '$checkIn - $checkOut\n$hours hrs';
-    return '$checkIn - $checkOut\n$hours hrs\nNote: $note';
+    final summary =
+        '$checkIn - $checkOut\n$hours net hrs (30 min unpaid break)';
+    if (note == null || note.isEmpty) return summary;
+    return '$summary\nNote: $note';
   }
 
   Future<void> _openAttendanceRecords(EmployeeModel employee) {
@@ -1236,8 +1262,11 @@ class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
                                     DataColumn(label: Text('Day')),
                                     DataColumn(label: Text('Check In')),
                                     DataColumn(label: Text('Check Out')),
-                                    DataColumn(label: Text('Hours')),
-                                    DataColumn(label: Text('Daily Pay')),
+                                    DataColumn(label: Text('Gross Hours')),
+                                    DataColumn(label: Text('Unpaid Break')),
+                                    DataColumn(label: Text('Net Hours')),
+                                    DataColumn(label: Text('Break Deduction')),
+                                    DataColumn(label: Text('Net Daily Pay')),
                                     DataColumn(label: Text('Note')),
                                   ],
                                   rows: [
@@ -1280,6 +1309,17 @@ class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
                                           ),
                                           DataCell(
                                             Text(
+                                              record.entry.grossWorkingHours
+                                                  .toStringAsFixed(2),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              '${record.entry.breakMinutes} min',
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
                                               record.entry.workingHours
                                                   .toStringAsFixed(2),
                                             ),
@@ -1287,8 +1327,23 @@ class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
                                           DataCell(
                                             Text(
                                               DateTimeHelper.currency(
+                                                (record.entry.breakMinutes /
+                                                        60) *
+                                                    widget.employee
+                                                        .hourlyRateAt(
+                                                          record.date,
+                                                        ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              DateTimeHelper.currency(
                                                 record.entry.workingHours *
-                                                    widget.employee.hourlyRate,
+                                                    widget.employee
+                                                        .hourlyRateAt(
+                                                          record.date,
+                                                        ),
                                               ),
                                             ),
                                           ),

@@ -43,6 +43,18 @@ class PayrollCalculationResult {
   final double employerEi;
 }
 
+enum PaymentAmountStatus { underpaid, exact, overpaid }
+
+class PaymentAmountAssessment {
+  const PaymentAmountAssessment({
+    required this.status,
+    required this.difference,
+  });
+
+  final PaymentAmountStatus status;
+  final double difference;
+}
+
 class PayrollService {
   const PayrollService();
 
@@ -59,17 +71,42 @@ class PayrollService {
   static const double _canadaEmploymentAmount = 1515;
   static const double _cppBasicAnnualExemption = 3500;
 
+  PaymentAmountAssessment assessPaymentAmount({
+    required double enteredAmount,
+    required double finalPayableAmount,
+  }) {
+    final difference = _round2(enteredAmount - finalPayableAmount);
+    if (difference < 0) {
+      return PaymentAmountAssessment(
+        status: PaymentAmountStatus.underpaid,
+        difference: difference.abs(),
+      );
+    }
+    if (difference > 0) {
+      return PaymentAmountAssessment(
+        status: PaymentAmountStatus.overpaid,
+        difference: difference,
+      );
+    }
+    return const PaymentAmountAssessment(
+      status: PaymentAmountStatus.exact,
+      difference: 0,
+    );
+  }
+
   PayrollCalculationResult calculateAmounts({
     required double hours,
     required double rate,
     required int numberOfPayPeriods,
+    double? regularIncomeOverride,
     double otherTaxableIncome = 0,
+    double otherNonTaxableIncome = 0,
     double otherNonTaxableDeduction = 0,
   }) {
     final safePayPeriods = numberOfPayPeriods <= 0 ? 26 : numberOfPayPeriods;
 
     // B45 = B43 * B44. Regular income is normal hourly earnings for the period.
-    final regularIncome = _round2(hours * rate);
+    final regularIncome = _round2(regularIncomeOverride ?? (hours * rate));
 
     // B47 = B45 + B46. Gross pay includes taxable additions before deductions.
     final grossPay = _round2(regularIncome + otherTaxableIncome);
@@ -134,7 +171,9 @@ class PayrollService {
     final totalTax = _round2(federalTax + provincialTax);
     final totalDeductions = _round2(cpp + ei + totalTax);
     final netPay = _round2(grossPay - totalDeductions);
-    final finalPayableAmount = _round2(netPay - otherNonTaxableDeduction);
+    final finalPayableAmount = _round2(
+      netPay + otherNonTaxableIncome - otherNonTaxableDeduction,
+    );
 
     return PayrollCalculationResult(
       regularIncome: regularIncome,
@@ -167,7 +206,10 @@ class PayrollService {
     DateTime? payDate,
     String payFrequency = 'Biweekly',
     int? numberOfPayPeriods,
+    double? regularIncomeOverride,
     double otherTaxableIncome = 0,
+    double otherNonTaxableIncome = 0,
+    String? nonTaxableIncomeReason,
     double otherNonTaxableDeduction = 0,
     String? nonTaxableDeductionReason,
     String? nonTaxableDeductionNote,
@@ -178,7 +220,9 @@ class PayrollService {
       hours: hours,
       rate: employee.hourlyRate,
       numberOfPayPeriods: periods,
+      regularIncomeOverride: regularIncomeOverride,
       otherTaxableIncome: otherTaxableIncome,
+      otherNonTaxableIncome: otherNonTaxableIncome,
       otherNonTaxableDeduction: otherNonTaxableDeduction,
     );
 
@@ -210,6 +254,8 @@ class PayrollService {
       payFrequency: payFrequency,
       numberOfPayPeriods: periods,
       otherTaxableIncome: otherTaxableIncome,
+      otherNonTaxableIncome: otherNonTaxableIncome,
+      nonTaxableIncomeReason: nonTaxableIncomeReason,
       otherNonTaxableDeduction: otherNonTaxableDeduction,
       nonTaxableDeductionReason: nonTaxableDeductionReason,
       nonTaxableDeductionNote: nonTaxableDeductionNote,

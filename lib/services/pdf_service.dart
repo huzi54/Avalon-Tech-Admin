@@ -624,6 +624,10 @@ class PdfService {
         payroll.nonTaxableDeductionNote?.trim().isNotEmpty == true
         ? payroll.nonTaxableDeductionNote!.trim()
         : null;
+    final incomeReason =
+        payroll.nonTaxableIncomeReason?.trim().isNotEmpty == true
+        ? payroll.nonTaxableIncomeReason!.trim()
+        : 'Other';
     final payPeriod =
         '${DateTimeHelper.formatDate(payroll.payPeriodStart)} - ${DateTimeHelper.formatDate(payroll.payPeriodEnd)}';
     final payDate = payroll.payDate == null
@@ -829,6 +833,28 @@ class PdfService {
                     ],
                     pw.Container(height: 0.45, color: border),
                     amountLine(
+                      'Other Non-Taxable Income ($incomeReason)',
+                      payroll.otherNonTaxableIncome,
+                      color: green,
+                    ),
+                    if (payroll.extraCashGiven > 0) ...[
+                      pw.Container(height: 0.45, color: border),
+                      amountLine(
+                        'Extra Cash Given to Employee',
+                        payroll.extraCashGiven,
+                        color: orange,
+                      ),
+                      pw.Container(height: 0.45, color: border),
+                      line(
+                        'Payment Note',
+                        'This amount was paid above the final payable amount '
+                            'and remains available for optional recovery on a '
+                            'future pay slip.',
+                        color: orange,
+                      ),
+                    ],
+                    pw.Container(height: 0.45, color: border),
+                    amountLine(
                       'FINAL PAYABLE AMOUNT',
                       payroll.finalPayableAmount,
                       bold: true,
@@ -847,6 +873,10 @@ class PdfService {
                         rows: [
                           kv('Payment Method', paymentMethod, bold: true),
                           kv('Payment Status', payroll.slipStatus, bold: true),
+                          kv(
+                            'Amount Paid',
+                            DateTimeHelper.currency(payroll.paidAmount),
+                          ),
                           kv('Check Number', checkText),
                         ],
                       ),

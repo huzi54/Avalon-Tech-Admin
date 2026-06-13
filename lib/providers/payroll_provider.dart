@@ -31,6 +31,23 @@ class PayrollProvider extends ChangeNotifier {
   String otherTaxableLabel(String payrollId) =>
       _otherTaxableLabels[payrollId] ?? 'Other Taxable Income';
 
+  double outstandingEmployeeCredit(String employeeId) {
+    var credit = 0.0;
+    final employeePayrolls =
+        _payrolls.where((item) => item.employeeId == employeeId).toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    for (final payroll in employeePayrolls) {
+      credit += payroll.extraCashGiven;
+      if (payroll.nonTaxableDeductionReason == 'Balance carried forward') {
+        credit = (credit - payroll.otherNonTaxableDeduction).clamp(
+          0,
+          double.infinity,
+        );
+      }
+    }
+    return credit;
+  }
+
   Future<void> loadPayrolls() async {
     isLoading = true;
     errorMessage = null;
@@ -56,14 +73,18 @@ class PayrollProvider extends ChangeNotifier {
     required double hours,
     required double rate,
     required int numberOfPayPeriods,
+    double? regularIncomeOverride,
     double otherTaxableIncome = 0,
+    double otherNonTaxableIncome = 0,
     double otherNonTaxableDeduction = 0,
   }) {
     return _payrollService.calculateAmounts(
       hours: hours,
       rate: rate,
       numberOfPayPeriods: numberOfPayPeriods,
+      regularIncomeOverride: regularIncomeOverride,
       otherTaxableIncome: otherTaxableIncome,
+      otherNonTaxableIncome: otherNonTaxableIncome,
       otherNonTaxableDeduction: otherNonTaxableDeduction,
     );
   }
@@ -76,8 +97,11 @@ class PayrollProvider extends ChangeNotifier {
     DateTime? payDate,
     String payFrequency = 'Biweekly',
     int? numberOfPayPeriods,
+    double? regularIncomeOverride,
     double otherTaxableIncome = 0,
     String? otherTaxableLabel,
+    double otherNonTaxableIncome = 0,
+    String? nonTaxableIncomeReason,
     double otherNonTaxableDeduction = 0,
     String? nonTaxableDeductionReason,
     String? nonTaxableDeductionNote,
@@ -90,7 +114,10 @@ class PayrollProvider extends ChangeNotifier {
       payDate: payDate,
       payFrequency: payFrequency,
       numberOfPayPeriods: numberOfPayPeriods,
+      regularIncomeOverride: regularIncomeOverride,
       otherTaxableIncome: otherTaxableIncome,
+      otherNonTaxableIncome: otherNonTaxableIncome,
+      nonTaxableIncomeReason: nonTaxableIncomeReason,
       otherNonTaxableDeduction: otherNonTaxableDeduction,
       nonTaxableDeductionReason: nonTaxableDeductionReason,
       nonTaxableDeductionNote: nonTaxableDeductionNote,
@@ -126,6 +153,7 @@ class PayrollProvider extends ChangeNotifier {
     required String slipStatus,
     String? paidVia,
     String? checkNumber,
+    double paidAmount = 0,
   }) async {
     final index = _payrolls.indexWhere((payroll) => payroll.id == payrollId);
     if (index == -1) return;
@@ -140,24 +168,17 @@ class PayrollProvider extends ChangeNotifier {
               paidVia?.toLowerCase() == 'check'
           ? checkNumber?.trim()
           : null,
+      paidAmount: slipStatus.toLowerCase() == 'paid' ? paidAmount : 0,
+      extraCashGiven: _extraCashGiven(
+        isPaid: slipStatus.toLowerCase() == 'paid',
+        paidAmount: paidAmount,
+        finalPayableAmount: original.finalPayableAmount,
+      ),
     );
 
     await _run(() => _firebaseService.savePayroll(updated));
     _payrolls[index] = updated;
     if (currentPreview?.id == payrollId) currentPreview = updated;
-
-    final remittanceIndex = _remittances.indexWhere(
-      (remittance) => remittance.id == payrollId,
-    );
-    if (remittanceIndex != -1) {
-      final remittance = _remittances[remittanceIndex].copyWith(
-        status: slipStatus.toLowerCase() == 'paid' ? 'Paid' : 'Unpaid',
-        paidVia: paidVia,
-        clearPaidVia: slipStatus.toLowerCase() != 'paid',
-      );
-      await _run(() => _firebaseService.saveRemittance(remittance));
-      _remittances[remittanceIndex] = remittance;
-    }
 
     notifyListeners();
   }
@@ -171,8 +192,11 @@ class PayrollProvider extends ChangeNotifier {
     DateTime? payDate,
     String payFrequency = 'Biweekly',
     int? numberOfPayPeriods,
+    double? regularIncomeOverride,
     double otherTaxableIncome = 0,
     String? otherTaxableLabel,
+    double otherNonTaxableIncome = 0,
+    String? nonTaxableIncomeReason,
     double otherNonTaxableDeduction = 0,
     String? nonTaxableDeductionReason,
     String? nonTaxableDeductionNote,
@@ -191,7 +215,10 @@ class PayrollProvider extends ChangeNotifier {
       payDate: payDate,
       payFrequency: payFrequency,
       numberOfPayPeriods: numberOfPayPeriods,
+      regularIncomeOverride: regularIncomeOverride,
       otherTaxableIncome: otherTaxableIncome,
+      otherNonTaxableIncome: otherNonTaxableIncome,
+      nonTaxableIncomeReason: nonTaxableIncomeReason,
       otherNonTaxableDeduction: otherNonTaxableDeduction,
       nonTaxableDeductionReason: nonTaxableDeductionReason,
       nonTaxableDeductionNote: nonTaxableDeductionNote,
@@ -201,6 +228,12 @@ class PayrollProvider extends ChangeNotifier {
       slipStatus: original.slipStatus,
       paidVia: original.paidVia,
       checkNumber: original.checkNumber,
+      paidAmount: original.paidAmount,
+      extraCashGiven: _extraCashGiven(
+        isPaid: original.slipStatus.toLowerCase() == 'paid',
+        paidAmount: original.paidAmount,
+        finalPayableAmount: updated.finalPayableAmount,
+      ),
     );
     final existingRemittance = _remittances
         .where((remittance) => remittance.id == payrollId)
@@ -242,10 +275,39 @@ class PayrollProvider extends ChangeNotifier {
 
     final updated = _remittances[index].copyWith(
       status: status,
-      clearPaidVia: status.toLowerCase() != 'paid',
+      clearPaidVia: true,
     );
     await _run(() => _firebaseService.saveRemittance(updated));
     _remittances[index] = updated;
+    notifyListeners();
+  }
+
+  Future<void> updateRemittanceStatuses({
+    required Set<String> remittanceIds,
+    required String status,
+  }) async {
+    if (remittanceIds.isEmpty) return;
+
+    final updates = <MapEntry<int, RemittanceModel>>[];
+    for (var index = 0; index < _remittances.length; index++) {
+      final remittance = _remittances[index];
+      if (!remittanceIds.contains(remittance.id)) continue;
+      updates.add(
+        MapEntry(
+          index,
+          remittance.copyWith(status: status, clearPaidVia: true),
+        ),
+      );
+    }
+
+    await _run(() async {
+      for (final update in updates) {
+        await _firebaseService.saveRemittance(update.value);
+      }
+    });
+    for (final update in updates) {
+      _remittances[update.key] = update.value;
+    }
     notifyListeners();
   }
 
@@ -294,6 +356,8 @@ class PayrollProvider extends ChangeNotifier {
     required String slipStatus,
     String? paidVia,
     String? checkNumber,
+    double? paidAmount,
+    double? extraCashGiven,
   }) {
     return PayrollModel(
       id: original.id,
@@ -323,12 +387,16 @@ class PayrollProvider extends ChangeNotifier {
       payFrequency: original.payFrequency,
       numberOfPayPeriods: original.numberOfPayPeriods,
       otherTaxableIncome: original.otherTaxableIncome,
+      otherNonTaxableIncome: original.otherNonTaxableIncome,
+      nonTaxableIncomeReason: original.nonTaxableIncomeReason,
       otherNonTaxableDeduction: original.otherNonTaxableDeduction,
       nonTaxableDeductionReason: original.nonTaxableDeductionReason,
       nonTaxableDeductionNote: original.nonTaxableDeductionNote,
       slipStatus: slipStatus,
       paidVia: paidVia,
       checkNumber: checkNumber,
+      paidAmount: paidAmount ?? original.paidAmount,
+      extraCashGiven: extraCashGiven ?? original.extraCashGiven,
       employerCpp: original.employerCpp,
       employerEi: original.employerEi,
     );
@@ -342,6 +410,21 @@ class PayrollProvider extends ChangeNotifier {
       await _firebaseService.savePayroll(payroll);
       await _firebaseService.saveRemittance(remittance);
     });
+  }
+
+  double _extraCashGiven({
+    required bool isPaid,
+    required double paidAmount,
+    required double finalPayableAmount,
+  }) {
+    if (!isPaid) return 0;
+    final assessment = _payrollService.assessPaymentAmount(
+      enteredAmount: paidAmount,
+      finalPayableAmount: finalPayableAmount,
+    );
+    return assessment.status == PaymentAmountStatus.overpaid
+        ? assessment.difference
+        : 0;
   }
 
   Future<void> _run(Future<void> Function() action) async {

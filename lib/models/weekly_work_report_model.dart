@@ -25,12 +25,21 @@ class DailyWorkEntry {
   }
 
   double get workingHours {
+    final grossMinutes = _grossMinutes;
+    if (grossMinutes == 0) return 0;
+    return (grossMinutes - breakMinutes).clamp(0, double.infinity) / 60;
+  }
+
+  double get grossWorkingHours => _grossMinutes / 60;
+
+  int get breakMinutes => _grossMinutes > 0 ? 30 : 0;
+
+  int get _grossMinutes {
     final start = checkInMinutes;
     final end = checkOutMinutes;
     if (start == null || end == null) return 0;
 
-    final minutes = end >= start ? end - start : (24 * 60 - start) + end;
-    return minutes / 60;
+    return end >= start ? end - start : (24 * 60 - start) + end;
   }
 
   factory DailyWorkEntry.fromMap(Map<String, dynamic> map) {

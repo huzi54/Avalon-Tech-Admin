@@ -18,6 +18,7 @@ class EmployeeModel {
     this.workPermitFilePath,
     this.offerLetterFilePath,
     this.additionalDocumentPaths = const [],
+    this.hourlyRateHistory = const [],
   });
 
   final String id;
@@ -38,6 +39,19 @@ class EmployeeModel {
   final String? workPermitFilePath;
   final String? offerLetterFilePath;
   final List<String> additionalDocumentPaths;
+  final List<HourlyRateChange> hourlyRateHistory;
+
+  double hourlyRateAt(DateTime date) {
+    if (hourlyRateHistory.isEmpty) return hourlyRate;
+    final changes = [...hourlyRateHistory]
+      ..sort((a, b) => a.effectiveAt.compareTo(b.effectiveAt));
+    var rate = changes.first.previousRate;
+    for (final change in changes) {
+      if (change.effectiveAt.isAfter(date)) break;
+      rate = change.newRate;
+    }
+    return rate;
+  }
 
   EmployeeModel copyWith({
     String? id,
@@ -58,6 +72,7 @@ class EmployeeModel {
     String? workPermitFilePath,
     String? offerLetterFilePath,
     List<String>? additionalDocumentPaths,
+    List<HourlyRateChange>? hourlyRateHistory,
   }) {
     return EmployeeModel(
       id: id ?? this.id,
@@ -80,6 +95,7 @@ class EmployeeModel {
       offerLetterFilePath: offerLetterFilePath ?? this.offerLetterFilePath,
       additionalDocumentPaths:
           additionalDocumentPaths ?? this.additionalDocumentPaths,
+      hourlyRateHistory: hourlyRateHistory ?? this.hourlyRateHistory,
     );
   }
 
@@ -106,6 +122,14 @@ class EmployeeModel {
           (map['additionalDocumentPaths'] as List<dynamic>? ?? [])
               .map((path) => path.toString())
               .toList(),
+      hourlyRateHistory:
+          (map['hourlyRateHistory'] as List<dynamic>? ?? const [])
+              .map(
+                (item) => HourlyRateChange.fromMap(
+                  Map<String, dynamic>.from(item as Map),
+                ),
+              )
+              .toList(),
     );
   }
 
@@ -129,6 +153,39 @@ class EmployeeModel {
       'workPermitFilePath': workPermitFilePath,
       'offerLetterFilePath': offerLetterFilePath,
       'additionalDocumentPaths': additionalDocumentPaths,
+      'hourlyRateHistory': [
+        for (final change in hourlyRateHistory) change.toMap(),
+      ],
+    };
+  }
+}
+
+class HourlyRateChange {
+  const HourlyRateChange({
+    required this.previousRate,
+    required this.newRate,
+    required this.effectiveAt,
+  });
+
+  final double previousRate;
+  final double newRate;
+  final DateTime effectiveAt;
+
+  factory HourlyRateChange.fromMap(Map<String, dynamic> map) {
+    return HourlyRateChange(
+      previousRate: (map['previousRate'] as num? ?? 0).toDouble(),
+      newRate: (map['newRate'] as num? ?? 0).toDouble(),
+      effectiveAt:
+          DateTime.tryParse(map['effectiveAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'previousRate': previousRate,
+      'newRate': newRate,
+      'effectiveAt': effectiveAt.toIso8601String(),
     };
   }
 }

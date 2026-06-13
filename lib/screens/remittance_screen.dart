@@ -10,6 +10,7 @@ import '../models/remittance_model.dart';
 import '../providers/payroll_provider.dart';
 import '../services/pdf_service.dart';
 import '../utils/date_time_helper.dart';
+import '../utils/remittance_filter.dart';
 
 class RemittanceArgs {
   const RemittanceArgs({this.statusFilter});
@@ -36,14 +37,6 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
   bool _handledArgs = false;
 
   static const _statusOptions = ['All', 'Paid', 'Unpaid'];
-  static const _paidViaOptions = [
-    'Cash',
-    'Check',
-    'Direct Deposit',
-    'E-Transfer',
-    'Other',
-  ];
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -63,29 +56,13 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
   }
 
   List<RemittanceModel> _filtered(List<RemittanceModel> records) {
-    final query = _searchController.text.trim().toLowerCase();
-    final from = _dateOnly(_fromDate);
-    final to = _dateOnly(_toDate);
-
-    return records.where((record) {
-      final created = _dateOnly(record.createdAt)!;
-      final searchMatches =
-          query.isEmpty ||
-          record.employeeName.toLowerCase().contains(query) ||
-          record.employeeId.toLowerCase().contains(query);
-      final statusMatches =
-          _statusFilter == 'All' ||
-          record.status.toLowerCase() == _statusFilter.toLowerCase();
-      final dateMatches =
-          (from == null || !created.isBefore(from)) &&
-          (to == null || !created.isAfter(to));
-      return searchMatches && statusMatches && dateMatches;
-    }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  }
-
-  DateTime? _dateOnly(DateTime? value) {
-    if (value == null) return null;
-    return DateTime(value.year, value.month, value.day);
+    return RemittanceFilter.apply(
+      records: records,
+      query: _searchController.text,
+      status: _statusFilter,
+      fromDate: _fromDate,
+      toDate: _toDate,
+    );
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
@@ -133,6 +110,23 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
     );
   }
 
+  Future<void> _updateSelectedStatus({
+    required PayrollProvider provider,
+    required List<RemittanceModel> selected,
+    required String status,
+  }) async {
+    if (selected.isEmpty) return;
+    await provider.updateRemittanceStatuses(
+      remittanceIds: selected.map((record) => record.id).toSet(),
+      status: status,
+    );
+    if (!mounted) return;
+    setState(_selectedIds.clear);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${selected.length} remittances marked $status')),
+    );
+  }
+
   String _buildCsv(List<RemittanceModel> records) {
     final rows = <List<String>>[
       [
@@ -151,7 +145,6 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
         'Net Pay',
         'Total Remittance',
         'Status',
-        'Paid Via',
         'Notes',
       ],
       for (final record in records)
@@ -171,7 +164,6 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
           record.netPay.toStringAsFixed(2),
           record.totalRemittance.toStringAsFixed(2),
           record.status,
-          record.paidVia ?? '',
           record.notes ?? '',
         ],
     ];
@@ -202,86 +194,126 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 380,
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: const InputDecoration(
-                          labelText: 'Search by employee name or ID',
-                          prefixIcon: Icon(Icons.search),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 300,
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: const InputDecoration(
+                            labelText: 'Search by employee name or ID',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                          onChanged: (_) => setState(() {}),
                         ),
-                        onChanged: (_) => setState(() {}),
                       ),
-                    ),
-                    SizedBox(
-                      width: 180,
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _statusFilter,
-                        decoration: const InputDecoration(labelText: 'Status'),
-                        items: [
-                          for (final option in _statusOptions)
-                            DropdownMenuItem(
-                              value: option,
-                              child: Text(option),
-                            ),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setState(() => _statusFilter = value);
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 130,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _statusFilter,
+                          decoration: const InputDecoration(
+                            labelText: 'Status',
+                          ),
+                          items: [
+                            for (final option in _statusOptions)
+                              DropdownMenuItem(
+                                value: option,
+                                child: Text(option),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _statusFilter = value);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _DateFilterButton(
+                        label: 'From Date',
+                        value: _fromDate,
+                        onPressed: () => _pickDate(isFrom: true),
+                      ),
+                      const SizedBox(width: 10),
+                      _DateFilterButton(
+                        label: 'To Date',
+                        value: _toDate,
+                        onPressed: () => _pickDate(isFrom: false),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _statusFilter = 'All';
+                            _fromDate = null;
+                            _toDate = null;
+                            _selectedIds.clear();
+                          });
                         },
+                        icon: const Icon(Icons.clear),
+                        label: const Text('Clear'),
                       ),
-                    ),
-                    _DateFilterButton(
-                      label: 'From Date',
-                      value: _fromDate,
-                      onPressed: () => _pickDate(isFrom: true),
-                    ),
-                    _DateFilterButton(
-                      label: 'To Date',
-                      value: _toDate,
-                      onPressed: () => _pickDate(isFrom: false),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() {
-                          _statusFilter = 'All';
-                          _fromDate = null;
-                          _toDate = null;
-                          _selectedIds.clear();
-                        });
-                      },
-                      icon: const Icon(Icons.clear),
-                      label: const Text('Clear'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: selected.isEmpty
-                          ? null
-                          : () => _export(selected),
-                      icon: const Icon(Icons.table_view_outlined),
-                      label: Text(
-                        selected.isEmpty
-                            ? 'Export to Excel'
-                            : 'Export to Excel (${selected.length})',
+                      const SizedBox(width: 10),
+                      FilledButton.icon(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => _export(selected),
+                        icon: const Icon(Icons.table_view_outlined),
+                        label: Text(
+                          selected.isEmpty
+                              ? 'Export to Excel'
+                              : 'Export to Excel (${selected.length})',
+                        ),
                       ),
-                    ),
-                    FilledButton.icon(
-                      onPressed: selected.isEmpty
-                          ? null
-                          : () => _print(selected),
-                      icon: const Icon(Icons.print_outlined),
-                      label: Text(
-                        selected.isEmpty
-                            ? 'Print Selected'
-                            : 'Print Selected (${selected.length})',
+                      const SizedBox(width: 10),
+                      FilledButton.icon(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => _print(selected),
+                        icon: const Icon(Icons.print_outlined),
+                        label: Text(
+                          selected.isEmpty
+                              ? 'Print Selected'
+                              : 'Print Selected (${selected.length})',
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 10),
+                      FilledButton.icon(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => _updateSelectedStatus(
+                                provider: provider,
+                                selected: selected,
+                                status: 'Paid',
+                              ),
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: Text(
+                          selected.isEmpty
+                              ? 'Mark Paid'
+                              : 'Mark Paid (${selected.length})',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => _updateSelectedStatus(
+                                provider: provider,
+                                selected: selected,
+                                status: 'Unpaid',
+                              ),
+                        icon: const Icon(Icons.cancel_outlined),
+                        label: Text(
+                          selected.isEmpty
+                              ? 'Mark Unpaid'
+                              : 'Mark Unpaid (${selected.length})',
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               Padding(
@@ -325,7 +357,6 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
                     child: _RemittanceTable(
                       records: filtered,
                       selectedIds: _selectedIds,
-                      paidViaOptions: _paidViaOptions,
                       hasSelection: selected.isNotEmpty,
                       onPrint: (record) => _print([record]),
                       onSelectionChanged: (id, isSelected) {
@@ -363,8 +394,8 @@ class _DateFilterButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 170,
-      height: 56,
+      width: 135,
+      height: 48,
       child: OutlinedButton.icon(
         onPressed: onPressed,
         icon: const Icon(Icons.date_range_outlined),
@@ -381,7 +412,6 @@ class _RemittanceTable extends StatefulWidget {
   const _RemittanceTable({
     required this.records,
     required this.selectedIds,
-    required this.paidViaOptions,
     required this.hasSelection,
     required this.onPrint,
     required this.onSelectionChanged,
@@ -389,7 +419,6 @@ class _RemittanceTable extends StatefulWidget {
 
   final List<RemittanceModel> records;
   final Set<String> selectedIds;
-  final List<String> paidViaOptions;
   final bool hasSelection;
   final ValueChanged<RemittanceModel> onPrint;
   final void Function(String id, bool selected) onSelectionChanged;
@@ -428,7 +457,7 @@ class _RemittanceTableState extends State<_RemittanceTable> {
             controller: _horizontalController,
             scrollDirection: Axis.horizontal,
             child: SizedBox(
-              width: 2300,
+              width: 2100,
               height: constraints.maxHeight,
               child: Scrollbar(
                 controller: _verticalController,
@@ -445,7 +474,6 @@ class _RemittanceTableState extends State<_RemittanceTable> {
                     columns: const [
                       DataColumn(label: Text('Action')),
                       DataColumn(label: Text('Remittance Status')),
-                      DataColumn(label: Text('Paid Via')),
                       DataColumn(label: Text('Employee')),
                       DataColumn(label: Text('Pay Frequency')),
                       DataColumn(label: Text('Period')),
@@ -498,48 +526,11 @@ class _RemittanceTableState extends State<_RemittanceTable> {
                                     if (value == null) return;
                                     context
                                         .read<PayrollProvider>()
-                                        .updateRemittancePayment(
+                                        .updateRemittanceStatus(
                                           remittanceId: record.id,
                                           status: value,
-                                          paidVia: value == 'Paid'
-                                              ? record.paidVia ??
-                                                    widget.paidViaOptions.first
-                                              : null,
                                         );
                                   },
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              SizedBox(
-                                width: 160,
-                                child: DropdownButton<String>(
-                                  value:
-                                      widget.paidViaOptions.contains(
-                                        record.paidVia,
-                                      )
-                                      ? record.paidVia
-                                      : widget.paidViaOptions.first,
-                                  isExpanded: true,
-                                  items: [
-                                    for (final option in widget.paidViaOptions)
-                                      DropdownMenuItem(
-                                        value: option,
-                                        child: Text(option),
-                                      ),
-                                  ],
-                                  onChanged: record.status == 'Paid'
-                                      ? (value) {
-                                          if (value == null) return;
-                                          context
-                                              .read<PayrollProvider>()
-                                              .updateRemittancePayment(
-                                                remittanceId: record.id,
-                                                status: 'Paid',
-                                                paidVia: value,
-                                              );
-                                        }
-                                      : null,
                                 ),
                               ),
                             ),

@@ -11,6 +11,14 @@ class AppInputFormatters {
     return oldValue;
   });
 
+  static final decimal4 = TextInputFormatter.withFunction((oldValue, newValue) {
+    final text = newValue.text;
+    if (text.isEmpty || RegExp(r'^\d*\.?\d{0,4}$').hasMatch(text)) {
+      return newValue;
+    }
+    return oldValue;
+  });
+
   static final digitsOnly = FilteringTextInputFormatter.digitsOnly;
 
   static final phone = FilteringTextInputFormatter.allow(

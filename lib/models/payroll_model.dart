@@ -27,12 +27,16 @@ class PayrollModel {
     this.payFrequency = 'Biweekly',
     this.numberOfPayPeriods = 26,
     this.otherTaxableIncome = 0,
+    this.otherNonTaxableIncome = 0,
+    this.nonTaxableIncomeReason,
     this.otherNonTaxableDeduction = 0,
     this.nonTaxableDeductionReason,
     this.nonTaxableDeductionNote,
     this.slipStatus = 'Unpaid',
     this.paidVia,
     this.checkNumber,
+    this.paidAmount = 0,
+    this.extraCashGiven = 0,
     this.employerCpp = 0,
     this.employerEi = 0,
   });
@@ -64,12 +68,16 @@ class PayrollModel {
   final String payFrequency;
   final int numberOfPayPeriods;
   final double otherTaxableIncome;
+  final double otherNonTaxableIncome;
+  final String? nonTaxableIncomeReason;
   final double otherNonTaxableDeduction;
   final String? nonTaxableDeductionReason;
   final String? nonTaxableDeductionNote;
   final String slipStatus;
   final String? paidVia;
   final String? checkNumber;
+  final double paidAmount;
+  final double extraCashGiven;
   final double employerCpp;
   final double employerEi;
 
@@ -106,7 +114,8 @@ class PayrollModel {
       netPay: (map['netPay'] as num? ?? 0).toDouble(),
       finalPayableAmount:
           (map['finalPayableAmount'] as num?)?.toDouble() ??
-          ((map['netPay'] as num? ?? 0) -
+          ((map['netPay'] as num? ?? 0) +
+                  (map['otherNonTaxableIncome'] as num? ?? 0) -
                   (map['otherNonTaxableDeduction'] as num? ?? 0))
               .toDouble(),
       payPeriodStart: readDate('payPeriodStart'),
@@ -116,6 +125,9 @@ class PayrollModel {
       payFrequency: map['payFrequency'] as String? ?? 'Biweekly',
       numberOfPayPeriods: (map['numberOfPayPeriods'] as num? ?? 26).toInt(),
       otherTaxableIncome: (map['otherTaxableIncome'] as num? ?? 0).toDouble(),
+      otherNonTaxableIncome: (map['otherNonTaxableIncome'] as num? ?? 0)
+          .toDouble(),
+      nonTaxableIncomeReason: map['nonTaxableIncomeReason'] as String?,
       otherNonTaxableDeduction: (map['otherNonTaxableDeduction'] as num? ?? 0)
           .toDouble(),
       nonTaxableDeductionReason: map['nonTaxableDeductionReason'] as String?,
@@ -123,6 +135,8 @@ class PayrollModel {
       slipStatus: map['slipStatus'] as String? ?? 'Unpaid',
       paidVia: map['paidVia'] as String?,
       checkNumber: map['checkNumber'] as String?,
+      paidAmount: (map['paidAmount'] as num? ?? 0).toDouble(),
+      extraCashGiven: (map['extraCashGiven'] as num? ?? 0).toDouble(),
       employerCpp: (map['employerCpp'] as num? ?? 0).toDouble(),
       employerEi: (map['employerEi'] as num? ?? 0).toDouble(),
     );
@@ -157,12 +171,16 @@ class PayrollModel {
       'payFrequency': payFrequency,
       'numberOfPayPeriods': numberOfPayPeriods,
       'otherTaxableIncome': otherTaxableIncome,
+      'otherNonTaxableIncome': otherNonTaxableIncome,
+      'nonTaxableIncomeReason': nonTaxableIncomeReason,
       'otherNonTaxableDeduction': otherNonTaxableDeduction,
       'nonTaxableDeductionReason': nonTaxableDeductionReason,
       'nonTaxableDeductionNote': nonTaxableDeductionNote,
       'slipStatus': slipStatus,
       'paidVia': paidVia,
       'checkNumber': checkNumber,
+      'paidAmount': paidAmount,
+      'extraCashGiven': extraCashGiven,
       'employerCpp': employerCpp,
       'employerEi': employerEi,
     };

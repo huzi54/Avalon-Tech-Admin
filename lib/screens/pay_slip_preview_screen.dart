@@ -7,6 +7,7 @@ import '../models/payroll_model.dart';
 import '../providers/employee_provider.dart';
 import '../providers/payroll_provider.dart';
 import '../services/pdf_service.dart';
+import '../services/payroll_service.dart';
 import '../utils/app_input_formatters.dart';
 import '../utils/date_time_helper.dart';
 import 'salary_calculator_screen.dart';
@@ -281,7 +282,7 @@ class _EmployeeSlipPreview extends StatelessWidget {
   }
 }
 
-class _PaymentControls extends StatelessWidget {
+class _PaymentControls extends StatefulWidget {
   const _PaymentControls({
     required this.payroll,
     required this.checkNumberController,
@@ -295,63 +296,200 @@ class _PaymentControls extends StatelessWidget {
   final List<String> statusOptions;
 
   @override
+  State<_PaymentControls> createState() => _PaymentControlsState();
+}
+
+class _PaymentControlsState extends State<_PaymentControls> {
+  late final TextEditingController _paidAmountController;
+  late String _displayedStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    _displayedStatus = widget.payroll.slipStatus;
+    _paidAmountController = TextEditingController(
+      text: widget.payroll.paidAmount > 0
+          ? widget.payroll.paidAmount.toStringAsFixed(2)
+          : '',
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _PaymentControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.payroll.slipStatus != widget.payroll.slipStatus) {
+      _displayedStatus = widget.payroll.slipStatus;
+    }
+    if (oldWidget.payroll.paidAmount != widget.payroll.paidAmount &&
+        widget.payroll.paidAmount > 0) {
+      _paidAmountController.text = widget.payroll.paidAmount.toStringAsFixed(2);
+    }
+  }
+
+  @override
+  void dispose() {
+    _paidAmountController.dispose();
+    super.dispose();
+  }
+
+  double get _enteredAmount =>
+      double.tryParse(_paidAmountController.text.trim()) ?? 0;
+
+  Future<void> _handleAmountChanged() async {
+    final amount = _enteredAmount;
+    final matchesPayable =
+        (amount - widget.payroll.finalPayableAmount).abs() < 0.005;
+
+    if (!matchesPayable && _displayedStatus == 'Paid') {
+      setState(() => _displayedStatus = 'Unpaid');
+      widget.checkNumberController.clear();
+      await context.read<PayrollProvider>().updateSlipPayment(
+        payrollId: widget.payroll.id,
+        slipStatus: 'Unpaid',
+        paidAmount: 0,
+      );
+      return;
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _updateStatus(String value, String paidVia) async {
+    if (value != 'Paid') {
+      setState(() => _displayedStatus = 'Unpaid');
+      widget.checkNumberController.clear();
+      await context.read<PayrollProvider>().updateSlipPayment(
+        payrollId: widget.payroll.id,
+        slipStatus: value,
+        paidAmount: 0,
+      );
+      return;
+    }
+
+    final amount = _enteredAmount;
+    final payable = widget.payroll.finalPayableAmount;
+    final assessment = const PayrollService().assessPaymentAmount(
+      enteredAmount: amount,
+      finalPayableAmount: payable,
+    );
+    if (assessment.status == PaymentAmountStatus.underpaid) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Amount is less than payable'),
+          content: Text(
+            'Enter ${DateTimeHelper.currency(payable)} before marking this '
+            'slip as paid. The entered amount is '
+            '${DateTimeHelper.currency(amount)}.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (assessment.status == PaymentAmountStatus.overpaid) {
+      final extra = assessment.difference;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Warning: amount exceeds payable'),
+          content: Text(
+            'You entered ${DateTimeHelper.currency(extra)} more than the final '
+            'payable amount. This will be saved as extra cash given to the '
+            'employee and carried forward as an outstanding credit.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Go Back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Proceed Anyway'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+    }
+
+    await context.read<PayrollProvider>().updateSlipPayment(
+      payrollId: widget.payroll.id,
+      slipStatus: 'Paid',
+      paidVia: paidVia,
+      checkNumber: paidVia == 'Check'
+          ? widget.checkNumberController.text
+          : null,
+      paidAmount: amount,
+    );
+    if (mounted) setState(() => _displayedStatus = 'Paid');
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final paidVia = paidViaOptions.contains(payroll.paidVia)
+    final payroll = widget.payroll;
+    final paidVia = widget.paidViaOptions.contains(payroll.paidVia)
         ? payroll.paidVia!
-        : paidViaOptions.first;
-    final showCheck = payroll.slipStatus == 'Paid' && paidVia == 'Check';
+        : widget.paidViaOptions.first;
+    final showCheck = _displayedStatus == 'Paid' && paidVia == 'Check';
+    final hasAmount = _enteredAmount > 0;
 
     return Column(
       children: [
+        TextField(
+          controller: _paidAmountController,
+          inputFormatters: [AppInputFormatters.number],
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'Amount Paid',
+            prefixText: r'$',
+            helperText:
+                'Final payable: ${DateTimeHelper.currency(payroll.finalPayableAmount)}',
+          ),
+          onChanged: (_) => _handleAmountChanged(),
+        ),
+        const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue: payroll.slipStatus,
+          key: ValueKey(_displayedStatus),
+          initialValue: _displayedStatus,
           decoration: const InputDecoration(labelText: 'Payment Status'),
           items: [
-            for (final status in statusOptions)
+            for (final status in widget.statusOptions)
               DropdownMenuItem(value: status, child: Text(status)),
           ],
-          onChanged: (value) {
-            if (value == null) return;
-            if (value != 'Paid') checkNumberController.clear();
-            context.read<PayrollProvider>().updateSlipPayment(
-              payrollId: payroll.id,
-              slipStatus: value,
-              paidVia: value == 'Paid' ? paidVia : null,
-              checkNumber: value == 'Paid' && paidVia == 'Check'
-                  ? checkNumberController.text
-                  : null,
-            );
-          },
+          onChanged: !hasAmount
+              ? null
+              : (value) async {
+                  if (value == null) return;
+                  await _updateStatus(value, paidVia);
+                },
         ),
-        if (payroll.slipStatus == 'Paid') ...[
+        if (_displayedStatus == 'Paid') ...[
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: paidVia,
             decoration: const InputDecoration(labelText: 'Paid Via'),
             items: [
-              for (final option in paidViaOptions)
+              for (final option in widget.paidViaOptions)
                 DropdownMenuItem(value: option, child: Text(option)),
             ],
-            onChanged: (value) {
+            onChanged: (value) async {
               if (value == null) return;
-              if (value != 'Check') checkNumberController.clear();
-              context.read<PayrollProvider>().updateSlipPayment(
-                payrollId: payroll.id,
-                slipStatus: 'Paid',
-                paidVia: value,
-                checkNumber: value == 'Check'
-                    ? checkNumberController.text
-                    : null,
-              );
+              if (value != 'Check') widget.checkNumberController.clear();
+              await _updateStatus('Paid', value);
             },
           ),
         ],
         if (showCheck) ...[
           const SizedBox(height: 12),
           TextField(
-            controller: checkNumberController,
-            inputFormatters: [AppInputFormatters.digitsOnly],
-            keyboardType: TextInputType.number,
+            controller: widget.checkNumberController,
             decoration: const InputDecoration(labelText: 'Check Number'),
             onChanged: (value) {
               context.read<PayrollProvider>().updateSlipPayment(
@@ -359,6 +497,7 @@ class _PaymentControls extends StatelessWidget {
                 slipStatus: 'Paid',
                 paidVia: 'Check',
                 checkNumber: value,
+                paidAmount: _enteredAmount,
               );
             },
           ),

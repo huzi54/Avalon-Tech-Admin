@@ -49,6 +49,47 @@ class EmployeeProvider extends ChangeNotifier {
     return hours;
   }
 
+  AttendancePayrollSummary attendancePayrollSummary({
+    required String employeeId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) {
+    final employee = findById(employeeId);
+    final reports = _weeklyReports[employeeId];
+    if (employee == null || reports == null) {
+      return const AttendancePayrollSummary();
+    }
+
+    final start = DateTime(startDate.year, startDate.month, startDate.day);
+    final end = DateTime(endDate.year, endDate.month, endDate.day);
+    final from = start.isBefore(end) ? start : end;
+    final to = start.isBefore(end) ? end : start;
+    var totalHours = 0.0;
+    var regularIncome = 0.0;
+
+    for (final report in reports) {
+      for (var index = 0; index < report.entries.length; index++) {
+        final entryDate = report.weekStart.add(Duration(days: index));
+        final date = DateTime(entryDate.year, entryDate.month, entryDate.day);
+        if (date.isBefore(from) || date.isAfter(to)) continue;
+
+        final hours = report.entries[index].workingHours;
+        if (hours <= 0) continue;
+        totalHours += hours;
+        regularIncome += hours * employee.hourlyRateAt(date);
+      }
+    }
+
+    final effectiveRate = totalHours > 0
+        ? regularIncome / totalHours
+        : employee.hourlyRateAt(to);
+    return AttendancePayrollSummary(
+      totalHours: totalHours,
+      effectiveHourlyRate: effectiveRate,
+      regularIncome: regularIncome,
+    );
+  }
+
   DailyWorkEntry? dailyEntryForDate({
     required String employeeId,
     required DateTime date,
@@ -118,8 +159,22 @@ class EmployeeProvider extends ChangeNotifier {
   Future<void> updateEmployee(EmployeeModel employee) async {
     final index = _employees.indexWhere((item) => item.id == employee.id);
     if (index == -1) return;
-    await _run(() => _firebaseService.updateEmployee(employee));
-    _employees[index] = employee;
+    final existing = _employees[index];
+    final rateChanged = existing.hourlyRate != employee.hourlyRate;
+    final updated = rateChanged
+        ? employee.copyWith(
+            hourlyRateHistory: [
+              ...existing.hourlyRateHistory,
+              HourlyRateChange(
+                previousRate: existing.hourlyRate,
+                newRate: employee.hourlyRate,
+                effectiveAt: DateTime.now(),
+              ),
+            ],
+          )
+        : employee.copyWith(hourlyRateHistory: existing.hourlyRateHistory);
+    await _run(() => _firebaseService.updateEmployee(updated));
+    _employees[index] = updated;
     notifyListeners();
   }
 
@@ -245,4 +300,16 @@ class EmployeeProvider extends ChangeNotifier {
   static bool _sameDate(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
+}
+
+class AttendancePayrollSummary {
+  const AttendancePayrollSummary({
+    this.totalHours = 0,
+    this.effectiveHourlyRate = 0,
+    this.regularIncome = 0,
+  });
+
+  final double totalHours;
+  final double effectiveHourlyRate;
+  final double regularIncome;
 }
