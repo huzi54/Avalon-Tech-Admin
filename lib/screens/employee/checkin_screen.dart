@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../app_router.dart';
 import '../../providers/attendance_provider.dart';
 import '../../utils/date_time_helper.dart';
 import '../../widgets/custom_button.dart';
@@ -43,7 +45,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
         title: const Text('Employee Attendance'),
         actions: [
           TextButton.icon(
-            onPressed: () => Navigator.pushNamed(context, '/history'),
+            onPressed: () => context.push(AppRoutes.attendanceHistory),
             icon: const Icon(Icons.history),
             label: const Text('History'),
           ),

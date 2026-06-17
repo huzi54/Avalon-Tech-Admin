@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../app_config.dart';
+import '../../app_router.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -14,7 +16,7 @@ class _SplashScreenState extends State<SplashScreen> {
   void initState() {
     super.initState();
     Future<void>.delayed(const Duration(milliseconds: 900), () {
-      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      if (mounted) context.go(AppRoutes.login);
     });
   }
 

@@ -1,5 +1,7 @@
 import 'package:flutter_payroll_app/models/remittance_model.dart';
+import 'package:flutter_payroll_app/providers/remittance_screen_provider.dart';
 import 'package:flutter_payroll_app/utils/remittance_filter.dart';
+import 'package:flutter_payroll_app/utils/record_date_sort.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -46,6 +48,35 @@ void main() {
     );
 
     expect(filtered.map((record) => record.id), ['matching']);
+  });
+
+  test('screen date order sorts by pay-period start', () {
+    final provider = RemittanceScreenProvider();
+    final juneFirst = _record(
+      id: 'period-first-created-later',
+      periodStart: DateTime(2026, 6),
+      periodEnd: DateTime(2026, 6, 7),
+      createdAt: DateTime(2026, 6, 30),
+    );
+    final juneThirteenth = _record(
+      id: 'period-later-created-earlier',
+      periodStart: DateTime(2026, 6, 13),
+      periodEnd: DateTime(2026, 6, 20),
+      createdAt: DateTime(2026, 6, 1),
+    );
+
+    expect(
+      provider.filtered([juneThirteenth, juneFirst]).map((record) => record.id),
+      ['period-first-created-later', 'period-later-created-earlier'],
+    );
+
+    provider.updateDateSort(RecordDateSort.newestFirst);
+    expect(
+      provider.filtered([juneThirteenth, juneFirst]).map((record) => record.id),
+      ['period-later-created-earlier', 'period-first-created-later'],
+    );
+
+    provider.dispose();
   });
 }
 

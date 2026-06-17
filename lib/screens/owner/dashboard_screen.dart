@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../app_router.dart';
 import '../../models/employee_model.dart';
 import '../../providers/employee_provider.dart';
 import '../../utils/validators.dart';
@@ -63,7 +65,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: const Text('Owner Dashboard'),
         actions: [
           TextButton.icon(
-            onPressed: () => Navigator.pushNamed(context, '/payroll'),
+            onPressed: () => context.push(AppRoutes.salaryCalculator),
             icon: const Icon(Icons.payments_outlined),
             label: const Text('Payroll'),
           ),

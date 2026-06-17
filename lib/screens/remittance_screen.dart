@@ -8,9 +8,9 @@ import 'package:provider/provider.dart';
 
 import '../models/remittance_model.dart';
 import '../providers/payroll_provider.dart';
+import '../providers/remittance_screen_provider.dart';
 import '../services/pdf_service.dart';
 import '../utils/date_time_helper.dart';
-import '../utils/remittance_filter.dart';
 import '../utils/record_date_sort.dart';
 
 class RemittanceArgs {
@@ -30,12 +30,7 @@ class RemittanceScreen extends StatefulWidget {
 
 class _RemittanceScreenState extends State<RemittanceScreen> {
   final _searchController = TextEditingController();
-  final Set<String> _selectedIds = {};
-
-  String _statusFilter = 'All';
-  RecordDateSort _dateSort = RecordDateSort.oldestFirst;
-  DateTime? _fromDate;
-  DateTime? _toDate;
+  final _screenProvider = RemittanceScreenProvider();
   bool _handledArgs = false;
 
   static const _statusOptions = ['All', 'Paid', 'Unpaid'];
@@ -47,33 +42,19 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
 
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is RemittanceArgs && args.statusFilter != null) {
-      _statusFilter = args.statusFilter!;
+      _screenProvider.applyInitialStatus(args.statusFilter);
     }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _screenProvider.dispose();
     super.dispose();
   }
 
-  List<RemittanceModel> _filtered(List<RemittanceModel> records) {
-    final filtered = RemittanceFilter.apply(
-      records: records,
-      query: _searchController.text,
-      status: _statusFilter,
-      fromDate: _fromDate,
-      toDate: _toDate,
-    );
-    return sortRecordsByDate(
-      records: filtered,
-      dateOf: (record) => record.createdAt,
-      order: _dateSort,
-    );
-  }
-
   Future<void> _pickDate({required bool isFrom}) async {
-    final current = isFrom ? _fromDate : _toDate;
+    final current = isFrom ? _screenProvider.fromDate : _screenProvider.toDate;
     final picked = await showDatePicker(
       context: context,
       initialDate: current ?? DateTime.now(),
@@ -81,18 +62,7 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
       lastDate: DateTime(2100),
     );
     if (picked == null) return;
-
-    setState(() {
-      if (isFrom) {
-        _fromDate = picked;
-        if (_toDate != null && _toDate!.isBefore(picked)) _toDate = picked;
-      } else {
-        _toDate = picked;
-        if (_fromDate != null && _fromDate!.isAfter(picked)) {
-          _fromDate = picked;
-        }
-      }
-    });
+    _screenProvider.updateDate(isFrom: isFrom, date: picked);
   }
 
   Future<void> _print(List<RemittanceModel> records) async {
@@ -128,7 +98,7 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
       status: status,
     );
     if (!mounted) return;
-    setState(_selectedIds.clear);
+    _screenProvider.clearSelection();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${selected.length} remittances marked $status')),
     );
@@ -183,220 +153,221 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Remittance')),
-      body: Consumer<PayrollProvider>(
-        builder: (context, provider, _) {
-          final filtered = _filtered(provider.remittances);
-          final selected = filtered
-              .where((record) => _selectedIds.contains(record.id))
-              .toList();
-          final totalRecords = selected.isEmpty ? filtered : selected;
-          final total = totalRecords.fold<double>(
-            0,
-            (sum, record) => sum + record.totalRemittance,
-          );
+    return ChangeNotifierProvider<RemittanceScreenProvider>.value(
+      value: _screenProvider,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Remittance')),
+        body: Consumer2<PayrollProvider, RemittanceScreenProvider>(
+          builder: (context, provider, screenProvider, _) {
+            final filtered = screenProvider.filtered(provider.remittances);
+            final selected = filtered
+                .where(
+                  (record) => screenProvider.selectedIds.contains(record.id),
+                )
+                .toList();
+            final totalRecords = selected.isEmpty ? filtered : selected;
+            final total = totalRecords.fold<double>(
+              0,
+              (sum, record) => sum + record.totalRemittance,
+            );
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 300,
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: const InputDecoration(
-                            labelText: 'Search by employee name or ID',
-                            prefixIcon: Icon(Icons.search),
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 130,
-                        child: DropdownButtonFormField<String>(
-                          initialValue: _statusFilter,
-                          decoration: const InputDecoration(
-                            labelText: 'Status',
-                          ),
-                          items: [
-                            for (final option in _statusOptions)
-                              DropdownMenuItem(
-                                value: option,
-                                child: Text(option),
-                              ),
-                          ],
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() => _statusFilter = value);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      _DateFilterButton(
-                        label: 'From Date',
-                        value: _fromDate,
-                        onPressed: () => _pickDate(isFrom: true),
-                      ),
-                      const SizedBox(width: 10),
-                      _DateFilterButton(
-                        label: 'To Date',
-                        value: _toDate,
-                        onPressed: () => _pickDate(isFrom: false),
-                      ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 190,
-                        child: DropdownButtonFormField<RecordDateSort>(
-                          key: ValueKey(_dateSort),
-                          initialValue: _dateSort,
-                          decoration: const InputDecoration(
-                            labelText: 'Date Order',
-                            prefixIcon: Icon(Icons.sort),
-                          ),
-                          items: [
-                            for (final option in RecordDateSort.values)
-                              DropdownMenuItem(
-                                value: option,
-                                child: Text(option.label),
-                              ),
-                          ],
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() => _dateSort = value);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _statusFilter = 'All';
-                            _fromDate = null;
-                            _toDate = null;
-                            _dateSort = RecordDateSort.oldestFirst;
-                            _selectedIds.clear();
-                          });
-                        },
-                        icon: const Icon(Icons.clear),
-                        label: const Text('Clear'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (selected.isNotEmpty)
+            return Column(
+              children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        Text(
-                          '${selected.length} selected',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(width: 12),
-                        FilledButton.icon(
-                          onPressed: () => _export(selected),
-                          icon: const Icon(Icons.table_view_outlined),
-                          label: Text('Export to Excel (${selected.length})'),
-                        ),
-                        const SizedBox(width: 10),
-                        FilledButton.icon(
-                          onPressed: () => _print(selected),
-                          icon: const Icon(Icons.print_outlined),
-                          label: Text('Print Selected (${selected.length})'),
-                        ),
-                        const SizedBox(width: 10),
-                        FilledButton.icon(
-                          onPressed: () => _updateSelectedStatus(
-                            provider: provider,
-                            selected: selected,
-                            status: 'Paid',
+                        SizedBox(
+                          width: 300,
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: const InputDecoration(
+                              labelText: 'Search by employee name or ID',
+                              prefixIcon: Icon(Icons.search),
+                            ),
+                            onChanged: screenProvider.updateQuery,
                           ),
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: Text('Mark Paid (${selected.length})'),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 130,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: screenProvider.statusFilter,
+                            decoration: const InputDecoration(
+                              labelText: 'Status',
+                            ),
+                            items: [
+                              for (final option in _statusOptions)
+                                DropdownMenuItem(
+                                  value: option,
+                                  child: Text(option),
+                                ),
+                            ],
+                            onChanged: (value) {
+                              if (value == null) return;
+                              screenProvider.updateStatus(value);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _DateFilterButton(
+                          label: 'From Date',
+                          value: screenProvider.fromDate,
+                          onPressed: () => _pickDate(isFrom: true),
+                        ),
+                        const SizedBox(width: 10),
+                        _DateFilterButton(
+                          label: 'To Date',
+                          value: screenProvider.toDate,
+                          onPressed: () => _pickDate(isFrom: false),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 220,
+                          child: DropdownButtonFormField<RecordDateSort>(
+                            key: ValueKey(screenProvider.dateSort),
+                            initialValue: screenProvider.dateSort,
+                            decoration: const InputDecoration(
+                              labelText: 'Date Order',
+                              prefixIcon: Icon(Icons.sort),
+                            ),
+                            items: [
+                              for (final option in RecordDateSort.values)
+                                DropdownMenuItem(
+                                  value: option,
+                                  child: Text(option.label),
+                                ),
+                            ],
+                            onChanged: (value) {
+                              if (value == null) return;
+                              screenProvider.updateDateSort(value);
+                            },
+                          ),
                         ),
                         const SizedBox(width: 10),
                         OutlinedButton.icon(
-                          onPressed: () => _updateSelectedStatus(
-                            provider: provider,
-                            selected: selected,
-                            status: 'Unpaid',
-                          ),
-                          icon: const Icon(Icons.cancel_outlined),
-                          label: Text('Mark Unpaid (${selected.length})'),
+                          onPressed: () {
+                            _searchController.clear();
+                            screenProvider.clearFilters();
+                          },
+                          icon: const Icon(Icons.clear),
+                          label: const Text('Clear'),
                         ),
                       ],
                     ),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        selected.isEmpty
-                            ? '${filtered.length} remittances'
-                            : '${selected.length} selected',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                if (selected.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          Text(
+                            '${selected.length} selected',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(width: 12),
+                          FilledButton.icon(
+                            onPressed: () => _export(selected),
+                            icon: const Icon(Icons.table_view_outlined),
+                            label: Text('Export to Excel (${selected.length})'),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton.icon(
+                            onPressed: () => _print(selected),
+                            icon: const Icon(Icons.print_outlined),
+                            label: Text('Print Selected (${selected.length})'),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton.icon(
+                            onPressed: () => _updateSelectedStatus(
+                              provider: provider,
+                              selected: selected,
+                              status: 'Paid',
+                            ),
+                            icon: const Icon(Icons.check_circle_outline),
+                            label: Text('Mark Paid (${selected.length})'),
+                          ),
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            onPressed: () => _updateSelectedStatus(
+                              provider: provider,
+                              selected: selected,
+                              status: 'Unpaid',
+                            ),
+                            icon: const Icon(Icons.cancel_outlined),
+                            label: Text('Mark Unpaid (${selected.length})'),
+                          ),
+                        ],
                       ),
-                      const Spacer(),
-                      Text(
-                        'TOTAL: ${DateTimeHelper.currency(total)}',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: const Color(0xFF1D4ED8),
-                          fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            selected.isEmpty
+                                ? '${filtered.length} remittances'
+                                : '${selected.length} selected',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: Card(
-                  margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: _RemittanceTable(
-                      records: filtered,
-                      selectedIds: _selectedIds,
-                      hasSelection: selected.isNotEmpty,
-                      onPrint: (record) => _print([record]),
-                      onSelectionChanged: (id, isSelected) {
-                        setState(() {
-                          if (isSelected) {
-                            _selectedIds.add(id);
-                          } else {
-                            _selectedIds.remove(id);
-                          }
-                        });
-                      },
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              'TOTAL: ${DateTimeHelper.currency(total)}',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(
+                                    color: const Color(0xFF1D4ED8),
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+                const SizedBox(height: 12),
+                Expanded(
+                  child: Card(
+                    margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: _RemittanceTable(
+                        records: filtered,
+                        selectedIds: screenProvider.selectedIds,
+                        hasSelection: selected.isNotEmpty,
+                        onPrint: (record) => _print([record]),
+                        onSelectionChanged: screenProvider.updateSelection,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -416,14 +387,23 @@ class _DateFilterButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 135,
+      width: 150,
       height: 48,
-      child: OutlinedButton.icon(
+      child: OutlinedButton(
         onPressed: onPressed,
-        icon: const Icon(Icons.date_range_outlined),
-        label: Text(
-          value == null ? label : DateTimeHelper.formatDate(value!),
-          overflow: TextOverflow.ellipsis,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.date_range_outlined, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                value == null ? label : DateTimeHelper.formatDate(value!),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
         ),
       ),
     );

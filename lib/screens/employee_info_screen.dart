@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
+import '../app_router.dart';
 import '../models/attendance_report_model.dart';
 import '../models/employee_document_model.dart';
 import '../models/employee_model.dart';
@@ -16,7 +18,6 @@ import '../utils/app_input_formatters.dart';
 import '../utils/date_time_helper.dart';
 import '../utils/responsive.dart';
 import '../widgets/custom_textfield.dart';
-import 'create_employee_screen.dart';
 import 'salary_calculator_screen.dart';
 
 class EmployeeInfoScreen extends StatefulWidget {
@@ -153,9 +154,7 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
       return;
     }
 
-    final employeeId = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => const CreateEmployeeScreen()),
-    );
+    final employeeId = await context.push<String>(AppRoutes.createEmployee);
     if (!mounted || employeeId == null) return;
 
     final employee = context.read<EmployeeProvider>().findById(employeeId);
@@ -166,10 +165,9 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
     final employee = _selectedEmployee;
     if (employee == null) return;
 
-    Navigator.pushNamed(
-      context,
-      SalaryCalculatorScreen.routeName,
-      arguments: SalaryCalculatorArgs(employeeId: employee.id),
+    context.push(
+      AppRoutes.salaryCalculator,
+      extra: SalaryCalculatorArgs(employeeId: employee.id),
     );
   }
 
@@ -1236,11 +1234,7 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
       return Future.value();
     }
 
-    return Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => AttendanceRecordsScreen(employee: employee),
-      ),
-    );
+    return context.push<void>(AppRoutes.attendanceRecord(employee.id));
   }
 }
 
@@ -1344,7 +1338,7 @@ class _EmployeeDocumentDialogState extends State<_EmployeeDocumentDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Close'),
         ),
       ],
@@ -1486,17 +1480,17 @@ class _AttendanceRecordsScreenState extends State<AttendanceRecordsScreen> {
           ),
           onChanged: (value) => enteredPin = value,
           onSubmitted: (_) {
-            Navigator.pop(dialogContext, enteredPin == _attendanceEditPin);
+            Navigator.of(dialogContext).pop(enteredPin == _attendanceEditPin);
           },
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Cancel'),
           ),
           FilledButton(
             onPressed: () {
-              Navigator.pop(dialogContext, enteredPin == _attendanceEditPin);
+              Navigator.of(dialogContext).pop(enteredPin == _attendanceEditPin);
             },
             child: const Text('Unlock'),
           ),
@@ -1583,7 +1577,7 @@ class _AttendanceRecordsScreenState extends State<AttendanceRecordsScreen> {
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'Back to employees',
-          onPressed: widget.onBack ?? () => Navigator.of(context).maybePop(),
+          onPressed: widget.onBack ?? () => context.pop(),
           icon: const Icon(Icons.arrow_back),
         ),
         title: Column(

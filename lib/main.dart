@@ -1,10 +1,12 @@
 import 'package:firebase_core/firebase_core.dart' show Firebase;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 
 import 'app_config.dart';
+import 'app_router.dart';
 import 'core/features/auth/providers/login_form_provider.dart';
 import 'core/localization/localization_service.dart';
 import 'firebase_options.dart';
@@ -14,14 +16,6 @@ import 'providers/auth_provider.dart';
 import 'providers/dashboard_navigation_provider.dart';
 import 'providers/employee_provider.dart';
 import 'providers/payroll_provider.dart';
-import 'screens/create_employee_screen.dart';
-import 'screens/employee_info_screen.dart';
-import 'screens/employee_punch_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/owner_dashboard_screen.dart';
-import 'screens/payroll_slips_screen.dart';
-import 'screens/remittance_screen.dart';
-import 'screens/salary_calculator_screen.dart';
 import 'services/firebase_service.dart';
 import 'themes/dark_theme.dart';
 import 'themes/light_theme.dart';
@@ -33,8 +27,21 @@ Future<void> main() async {
   runApp(const PayrollDesktopApp());
 }
 
-class PayrollDesktopApp extends StatelessWidget {
+class PayrollDesktopApp extends StatefulWidget {
   const PayrollDesktopApp({super.key});
+
+  @override
+  State<PayrollDesktopApp> createState() => _PayrollDesktopAppState();
+}
+
+class _PayrollDesktopAppState extends State<PayrollDesktopApp> {
+  late final GoRouter _appRouter;
+
+  @override
+  void initState() {
+    super.initState();
+    _appRouter = createAppRouter();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,13 +63,14 @@ class PayrollDesktopApp extends StatelessWidget {
       ],
       child: Consumer<AppSettingsProvider>(
         builder: (context, settings, _) {
-          return MaterialApp(
+          return MaterialApp.router(
             title: AppConfig.appName,
             debugShowCheckedModeBanner: false,
             theme: LightTheme.theme,
             darkTheme: DarkTheme.theme,
             themeMode: settings.themeMode,
             locale: settings.locale,
+            routerConfig: _appRouter,
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: const [
               AppLocalizations.delegate,
@@ -70,20 +78,6 @@ class PayrollDesktopApp extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            initialRoute: LoginScreen.routeName,
-            routes: {
-              LoginScreen.routeName: (_) => const LoginScreen(),
-              OwnerDashboardScreen.routeName: (_) =>
-                  const OwnerDashboardScreen(),
-              EmployeePunchScreen.routeName: (_) => const EmployeePunchScreen(),
-              EmployeeInfoScreen.routeName: (_) => const EmployeeInfoScreen(),
-              CreateEmployeeScreen.routeName: (_) =>
-                  const CreateEmployeeScreen(),
-              PayrollSlipsScreen.routeName: (_) => const PayrollSlipsScreen(),
-              RemittanceScreen.routeName: (_) => const RemittanceScreen(),
-              SalaryCalculatorScreen.routeName: (_) =>
-                  const SalaryCalculatorScreen(),
-            },
           );
         },
       ),

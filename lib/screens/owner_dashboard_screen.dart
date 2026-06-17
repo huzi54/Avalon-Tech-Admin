@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../app_config.dart';
+import '../app_router.dart';
 import '../core/localization/localization_service.dart';
 import '../models/payroll_model.dart';
 import '../models/remittance_model.dart';
@@ -13,8 +15,6 @@ import '../providers/payroll_provider.dart';
 import '../utils/date_time_helper.dart';
 import 'create_employee_screen.dart';
 import 'employee_info_screen.dart';
-import 'login_screen.dart';
-import 'pay_slip_preview_screen.dart';
 import 'payroll_slips_screen.dart';
 import 'remittance_screen.dart';
 import 'salary_calculator_screen.dart';
@@ -380,11 +380,7 @@ class _SettingsContent extends StatelessWidget {
               onPressed: () async {
                 await context.read<AuthProvider>().logout();
                 if (!context.mounted) return;
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  LoginScreen.routeName,
-                  (route) => false,
-                );
+                context.go(AppRoutes.login);
               },
               icon: const Icon(Icons.logout_outlined),
               label: Text(context.tr('logout')),
@@ -627,11 +623,7 @@ class _Header extends StatelessWidget {
             onPressed: () async {
               await context.read<AuthProvider>().logout();
               if (!context.mounted) return;
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                LoginScreen.routeName,
-                (route) => false,
-              );
+              context.go(AppRoutes.login);
             },
             icon: const Icon(Icons.logout_outlined),
             label: const Text('Logout'),
@@ -892,12 +884,7 @@ class _PayrollPanel extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         context.read<PayrollProvider>().preview(payroll);
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                PaySlipPreviewScreen(payrollId: payroll.id),
-                          ),
-                        );
+                        context.push(AppRoutes.paySlipPreview(payroll.id));
                       },
                       icon: const Icon(Icons.description_outlined, size: 18),
                       label: const Text('PDF Preview'),

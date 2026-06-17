@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../app_config.dart';
+import '../app_router.dart';
 import '../core/features/auth/providers/login_form_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/employee_provider.dart';
 import '../providers/payroll_provider.dart';
 import '../utils/date_time_helper.dart';
-import 'employee_punch_screen.dart';
-import 'owner_dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -82,15 +82,15 @@ class _LoginScreenState extends State<LoginScreen> {
             labelText: 'Enter owner PIN',
             prefixIcon: Icon(Icons.lock_outline),
           ),
-          onSubmitted: (_) => Navigator.pop(context, true),
+          onSubmitted: (_) => context.pop(true),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => context.pop(false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => context.pop(true),
             child: const Text('Continue'),
           ),
         ],
@@ -115,7 +115,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     _loadDashboardData();
     if (!mounted) return;
-    Navigator.pushReplacementNamed(context, OwnerDashboardScreen.routeName);
+    context.go(AppRoutes.dashboard);
   }
 
   Future<void> _loadDashboardData() async {
@@ -132,7 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _openEmployee() async {
     await context.read<EmployeeProvider>().loadEmployees();
     if (!mounted) return;
-    Navigator.pushReplacementNamed(context, EmployeePunchScreen.routeName);
+    context.go(AppRoutes.employeePunch);
   }
 
   @override

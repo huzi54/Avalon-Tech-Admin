@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../app_router.dart';
 import '../models/employee_model.dart';
 import '../models/payroll_model.dart';
 import '../providers/employee_provider.dart';
@@ -12,7 +14,6 @@ import '../utils/responsive.dart';
 import '../widgets/custom_dropdown.dart';
 import '../widgets/custom_textfield.dart';
 import '../widgets/payroll_table.dart';
-import 'pay_slip_preview_screen.dart';
 
 class SalaryCalculatorArgs {
   const SalaryCalculatorArgs({
@@ -366,14 +367,14 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => context.pop(),
             child: const Text('Close'),
           ),
         ],
       ),
     );
-    if (editingPayrollId != null && mounted && Navigator.canPop(context)) {
-      Navigator.pop(context, savedPayroll);
+    if (editingPayrollId != null && mounted && context.canPop()) {
+      context.pop(savedPayroll);
     }
   }
 
@@ -406,11 +407,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
 
   void _openPaySlipPreview(PayrollModel payroll) {
     context.read<PayrollProvider>().preview(payroll);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PaySlipPreviewScreen(payrollId: payroll.id),
-      ),
-    );
+    context.push(AppRoutes.paySlipPreview(payroll.id));
   }
 
   @override

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
+import '../app_router.dart';
 import '../models/employee_model.dart';
 import '../models/payroll_model.dart';
 import '../providers/employee_provider.dart';
@@ -103,14 +105,11 @@ class _PaySlipPreviewScreenState extends State<PaySlipPreviewScreen> {
   }
 
   void _openEdit(PayrollModel payroll) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SalaryCalculatorScreen(
-          initialArgs: SalaryCalculatorArgs(
-            employeeId: payroll.employeeId,
-            payrollId: payroll.id,
-          ),
-        ),
+    context.push(
+      AppRoutes.salaryCalculator,
+      extra: SalaryCalculatorArgs(
+        employeeId: payroll.employeeId,
+        payrollId: payroll.id,
       ),
     );
   }
@@ -383,10 +382,7 @@ class _PaymentControlsState extends State<_PaymentControls> {
             '${DateTimeHelper.currency(amount)}.',
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
+            TextButton(onPressed: () => context.pop(), child: const Text('OK')),
           ],
         ),
       );
@@ -406,11 +402,11 @@ class _PaymentControlsState extends State<_PaymentControls> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => context.pop(false),
               child: const Text('Go Back'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => context.pop(true),
               child: const Text('Proceed Anyway'),
             ),
           ],

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../app_router.dart';
 import '../../constants/strings.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/validators.dart';
@@ -34,7 +36,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _passwordController.text,
     );
     if (!mounted || !success) return;
-    Navigator.pushReplacementNamed(context, '/login');
+    context.go(AppRoutes.login);
   }
 
   @override

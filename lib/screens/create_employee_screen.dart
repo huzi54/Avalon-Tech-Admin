@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/employee_model.dart';
@@ -148,7 +149,7 @@ class _CreateEmployeeScreenState extends State<CreateEmployeeScreen> {
         onSaved(employee.id);
         return;
       }
-      Navigator.pop(context, employee.id);
+      context.pop(employee.id);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -231,7 +232,7 @@ class _CreateEmployeeScreenState extends State<CreateEmployeeScreen> {
         key: _formKey,
         child: Column(
           children: [
-            _Header(onBack: widget.onBack ?? () => Navigator.pop(context)),
+            _Header(onBack: widget.onBack ?? () => context.pop()),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(28, 22, 28, 24),
@@ -527,7 +528,7 @@ class _CreateEmployeeScreenState extends State<CreateEmployeeScreen> {
                               height: 48,
                               width: 112,
                               child: OutlinedButton(
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () => context.pop(),
                                 child: const Text('Cancel'),
                               ),
                             ),
