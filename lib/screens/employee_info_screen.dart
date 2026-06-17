@@ -1,11 +1,17 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
+import '../models/attendance_report_model.dart';
+import '../models/employee_document_model.dart';
 import '../models/employee_model.dart';
 import '../models/weekly_work_report_model.dart';
 import '../providers/employee_provider.dart';
+import '../services/firebase_service.dart';
+import '../services/pdf_service.dart';
 import '../utils/app_input_formatters.dart';
 import '../utils/date_time_helper.dart';
 import '../utils/responsive.dart';
@@ -14,11 +20,16 @@ import 'create_employee_screen.dart';
 import 'salary_calculator_screen.dart';
 
 class EmployeeInfoScreen extends StatefulWidget {
-  const EmployeeInfoScreen({this.onCreateEmployee, super.key});
+  const EmployeeInfoScreen({
+    this.onCreateEmployee,
+    this.onOpenAttendance,
+    super.key,
+  });
 
   static const routeName = '/employee-info';
 
   final VoidCallback? onCreateEmployee;
+  final ValueChanged<EmployeeModel>? onOpenAttendance;
 
   @override
   State<EmployeeInfoScreen> createState() => _EmployeeInfoScreenState();
@@ -46,6 +57,7 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
   DateTime? _joiningDate;
   DateTime? _endDate;
   String? _legalStatus;
+  String _employmentType = 'Full-time';
   late DateTime _weekStart;
   late List<_DailyTimeDraft> _weeklyDraft;
   String? _editingWeeklyReportId;
@@ -56,6 +68,16 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
     'Work Permit',
     'Student Permit',
     'Visitor Record',
+    'Other',
+  ];
+  static const _employmentTypes = [
+    'Full-time',
+    'Part-time',
+    'Contract',
+    'Seasonal',
+    'Temporary',
+    'Casual',
+    'Internship',
     'Other',
   ];
 
@@ -121,6 +143,7 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
     _joiningDate = employee.joiningDate;
     _endDate = employee.endDate;
     _legalStatus = employee.legalStatus;
+    _employmentType = employee.employmentType;
   }
 
   Future<void> _openCreateEmployee() async {
@@ -202,13 +225,22 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
           checkInMinutes: _minutes(draft.checkIn),
           checkOutMinutes: _minutes(draft.checkOut),
           attendanceNote: _emptyToNull(draft.noteController.text),
+          attendanceStatus: draft.attendanceStatus,
+          attendanceReason: draft.attendanceReason,
+          hourlyRateOverride: draft.hourlyRateOverride,
         ),
     ];
     final totalHours = entries.fold<double>(
       0,
       (sum, entry) => sum + entry.workingHours,
     );
-    if (totalHours <= 0) {
+    final hasStatusRecord = entries.any(
+      (entry) =>
+          entry.attendanceStatus != 'Present' ||
+          (entry.attendanceReason?.trim().isNotEmpty ?? false) ||
+          (entry.attendanceNote?.trim().isNotEmpty ?? false),
+    );
+    if (totalHours <= 0 && !hasStatusRecord) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add at least one check-in/check-out.')),
       );
@@ -258,6 +290,7 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
       email: _emailController.text.trim(),
       role: _roleController.text.trim(),
       hourlyRate: double.parse(_hourlyRateController.text.trim()),
+      employmentType: _employmentType,
       defaultHours: double.parse(_hoursController.text.trim()),
       phone: _emptyToNull(_phoneController.text),
       department: _emptyToNull(_departmentController.text),
@@ -535,6 +568,7 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
         _section('Profile', [
           _detail('Employee ID', employee.id),
           _detail('Designation', employee.role),
+          _detail('Employment Type', employee.employmentType),
           _detail('Department', employee.department ?? '-'),
           _detail('Hourly Rate', DateTimeHelper.currency(employee.hourlyRate)),
           _detail(
@@ -563,13 +597,13 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
             employee.socialSecurityNumber ?? '-',
           ),
           _detail('Legal Status', employee.legalStatus ?? '-'),
-          _detail('Work Permit', _fileName(employee.workPermitFilePath)),
-          _detail('Passport', _fileName(employee.passportFilePath)),
+          _documentDetail('Work Permit', employee.workPermitFilePath),
+          _documentDetail('Passport', employee.passportFilePath),
         ]),
         _section('Employment', [
           _detail('Joining Date', _date(employee.joiningDate)),
           _detail('End Date', _date(employee.endDate)),
-          _detail('Offer Letter', _fileName(employee.offerLetterFilePath)),
+          _documentDetail('Offer Letter', employee.offerLetterFilePath),
         ]),
         _weeklyReportsSection(employee),
       ],
@@ -692,6 +726,23 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
               SizedBox(
                 width: 280,
                 child: DropdownButtonFormField<String>(
+                  initialValue: _employmentType,
+                  decoration: const InputDecoration(
+                    labelText: 'Employment Type',
+                  ),
+                  items: [
+                    for (final type in _employmentTypes)
+                      DropdownMenuItem(value: type, child: Text(type)),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _employmentType = value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 280,
+                child: DropdownButtonFormField<String>(
                   initialValue: _legalStatus,
                   decoration: const InputDecoration(labelText: 'Legal Status'),
                   items: [
@@ -805,6 +856,50 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
     );
   }
 
+  Widget _documentDetail(String label, String? storedReference) {
+    final hasDocument =
+        storedReference != null && storedReference.trim().isNotEmpty;
+    return SizedBox(
+      width: 250,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 4),
+          if (!hasDocument)
+            const Text('-', style: TextStyle(fontWeight: FontWeight.w700))
+          else
+            OutlinedButton.icon(
+              onPressed: () => _openEmployeeDocument(
+                label: label,
+                storedReference: storedReference,
+              ),
+              icon: const Icon(Icons.visibility_outlined, size: 18),
+              label: Text(
+                _fileName(storedReference),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openEmployeeDocument({
+    required String label,
+    required String storedReference,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (_) => _EmployeeDocumentDialog(
+        title: label,
+        storedReference: storedReference,
+        service: context.read<FirebaseService>(),
+      ),
+    );
+  }
+
   String _date(DateTime? value) {
     return value == null ? '-' : DateTimeHelper.formatDate(value);
   }
@@ -815,11 +910,12 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
     try {
       final payload = jsonDecode(path);
       if (payload is Map<String, dynamic> &&
-          payload['storageType'] == 'firestoreBase64') {
+          (payload['storageType'] == 'firestoreBase64' ||
+              payload['storageType'] == 'firestoreDocument')) {
         final fileName = payload['fileName'] as String?;
         return fileName == null || fileName.isEmpty
-            ? 'Stored in profile'
-            : '$fileName - stored in profile';
+            ? 'Stored document'
+            : fileName;
       }
     } catch (_) {
       // Old records may contain a URL/local path instead of the new JSON
@@ -916,7 +1012,11 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
                             Text(_draftGrossHours(draft).toStringAsFixed(2)),
                           ),
                           DataCell(
-                            Text(_draftGrossHours(draft) > 0 ? '30 min' : '-'),
+                            Text(
+                              _draftGrossHours(draft) > 0
+                                  ? '${_draftBreakMinutes(draft)} min'
+                                  : '-',
+                            ),
                           ),
                           DataCell(Text(_draftHours(draft).toStringAsFixed(2))),
                           DataCell(
@@ -1063,6 +1163,9 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
             checkIn: _timeOfDay(entry.checkInMinutes),
             checkOut: _timeOfDay(entry.checkOutMinutes),
             note: entry.attendanceNote,
+            attendanceStatus: entry.attendanceStatus,
+            attendanceReason: entry.attendanceReason,
+            hourlyRateOverride: entry.hourlyRateOverride,
           ),
       ];
     });
@@ -1084,7 +1187,17 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
   }
 
   double _draftHours(_DailyTimeDraft draft) {
-    return (_draftGrossHours(draft) - 0.5).clamp(0, double.infinity);
+    return (_draftGrossHours(draft) - (_draftBreakMinutes(draft) / 60)).clamp(
+      0,
+      double.infinity,
+    );
+  }
+
+  int _draftBreakMinutes(_DailyTimeDraft draft) {
+    final gross = _draftGrossHours(draft);
+    if (gross >= 8) return 30;
+    if (gross >= 5) return 15;
+    return 0;
   }
 
   double _draftGrossHours(_DailyTimeDraft draft) {
@@ -1110,15 +1223,23 @@ class _EmployeeInfoScreenState extends State<EmployeeInfoScreen> {
     final hours = entry.workingHours.toStringAsFixed(2);
     final note = entry.attendanceNote?.trim();
     final summary =
-        '$checkIn - $checkOut\n$hours net hrs (30 min unpaid break)';
+        '$checkIn - $checkOut\n$hours net hrs '
+        '(${entry.breakMinutes} min unpaid break)\n${entry.attendanceStatus}';
     if (note == null || note.isEmpty) return summary;
     return '$summary\nNote: $note';
   }
 
   Future<void> _openAttendanceRecords(EmployeeModel employee) {
-    return showDialog<void>(
-      context: context,
-      builder: (_) => _AttendanceRecordsDialog(employee: employee),
+    final onOpenAttendance = widget.onOpenAttendance;
+    if (onOpenAttendance != null) {
+      onOpenAttendance(employee);
+      return Future.value();
+    }
+
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AttendanceRecordsScreen(employee: employee),
+      ),
     );
   }
 }
@@ -1129,243 +1250,94 @@ class _DailyTimeDraft {
     this.checkIn,
     this.checkOut,
     String? note,
+    this.attendanceStatus = 'Present',
+    this.attendanceReason,
+    this.hourlyRateOverride,
   }) : noteController = TextEditingController(text: note ?? '');
 
   final String dayName;
   TimeOfDay? checkIn;
   TimeOfDay? checkOut;
   final TextEditingController noteController;
+  final String attendanceStatus;
+  final String? attendanceReason;
+  final double? hourlyRateOverride;
 }
 
-class _AttendanceRecordsDialog extends StatefulWidget {
-  const _AttendanceRecordsDialog({required this.employee});
+class _EmployeeDocumentDialog extends StatefulWidget {
+  const _EmployeeDocumentDialog({
+    required this.title,
+    required this.storedReference,
+    required this.service,
+  });
 
-  final EmployeeModel employee;
+  final String title;
+  final String storedReference;
+  final FirebaseService service;
 
   @override
-  State<_AttendanceRecordsDialog> createState() =>
-      _AttendanceRecordsDialogState();
+  State<_EmployeeDocumentDialog> createState() =>
+      _EmployeeDocumentDialogState();
 }
 
-class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
-  final _filterNotifier = ValueNotifier<_AttendanceDateFilter>(
-    const _AttendanceDateFilter(),
-  );
-  final _horizontalController = ScrollController();
-  final _verticalController = ScrollController();
+class _EmployeeDocumentDialogState extends State<_EmployeeDocumentDialog> {
+  late final Future<EmployeeDocumentData> _documentFuture;
 
   @override
-  void dispose() {
-    _filterNotifier.dispose();
-    _horizontalController.dispose();
-    _verticalController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDate({
-    required DateTime? current,
-    required ValueChanged<DateTime?> onPicked,
-  }) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: current ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
+  void initState() {
+    super.initState();
+    _documentFuture = widget.service.fetchEmployeeDocument(
+      widget.storedReference,
     );
-    if (picked != null) onPicked(picked);
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('${widget.employee.name} Attendance Records'),
+      title: Text(widget.title),
       content: SizedBox(
-        width: 1020,
-        height: 620,
-        child: ValueListenableBuilder<_AttendanceDateFilter>(
-          valueListenable: _filterNotifier,
-          builder: (context, filter, _) {
-            final records = _attendanceRecords(filter);
+        width: 900,
+        height: MediaQuery.sizeOf(context).height * 0.72,
+        child: FutureBuilder<EmployeeDocumentData>(
+          future: _documentFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  snapshot.error.toString(),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _pickDate(
-                        current: filter.fromDate,
-                        onPicked: (value) {
-                          _filterNotifier.value = filter.copyWith(
-                            fromDate: value,
-                          );
-                        },
-                      ),
-                      icon: const Icon(Icons.date_range_outlined),
-                      label: Text(
-                        filter.fromDate == null
-                            ? 'From Date'
-                            : DateTimeHelper.formatDate(filter.fromDate!),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _pickDate(
-                        current: filter.toDate,
-                        onPicked: (value) {
-                          _filterNotifier.value = filter.copyWith(
-                            toDate: value,
-                          );
-                        },
-                      ),
-                      icon: const Icon(Icons.event_outlined),
-                      label: Text(
-                        filter.toDate == null
-                            ? 'To Date'
-                            : DateTimeHelper.formatDate(filter.toDate!),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () {
-                        _filterNotifier.value = const _AttendanceDateFilter();
-                      },
-                      icon: const Icon(Icons.filter_alt_off_outlined),
-                      label: const Text('Clear Filter'),
-                    ),
-                    Text('${records.length} records'),
-                  ],
+            final document = snapshot.data!;
+            if (document.reference.contentType == 'application/pdf') {
+              return PdfPreview(
+                build: (_) async => document.bytes,
+                pdfFileName: document.reference.fileName,
+                canChangeOrientation: false,
+                canChangePageFormat: false,
+                allowSharing: false,
+              );
+            }
+            if (document.reference.contentType.startsWith('image/')) {
+              return InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5,
+                child: Center(
+                  child: Image.memory(document.bytes, fit: BoxFit.contain),
                 ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: records.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No attendance records found for this filter.',
-                          ),
-                        )
-                      : Scrollbar(
-                          controller: _horizontalController,
-                          thumbVisibility: true,
-                          child: SingleChildScrollView(
-                            controller: _horizontalController,
-                            scrollDirection: Axis.horizontal,
-                            child: Scrollbar(
-                              controller: _verticalController,
-                              thumbVisibility: true,
-                              child: SingleChildScrollView(
-                                controller: _verticalController,
-                                child: DataTable(
-                                  columns: const [
-                                    DataColumn(label: Text('Date')),
-                                    DataColumn(label: Text('Day')),
-                                    DataColumn(label: Text('Check In')),
-                                    DataColumn(label: Text('Check Out')),
-                                    DataColumn(label: Text('Gross Hours')),
-                                    DataColumn(label: Text('Unpaid Break')),
-                                    DataColumn(label: Text('Net Hours')),
-                                    DataColumn(label: Text('Break Deduction')),
-                                    DataColumn(label: Text('Net Daily Pay')),
-                                    DataColumn(label: Text('Note')),
-                                  ],
-                                  rows: [
-                                    for (final record in records)
-                                      DataRow(
-                                        cells: [
-                                          DataCell(
-                                            Text(
-                                              DateTimeHelper.formatDate(
-                                                record.date,
-                                              ),
-                                            ),
-                                          ),
-                                          DataCell(Text(record.entry.dayName)),
-                                          DataCell(
-                                            OutlinedButton(
-                                              onPressed: () => _pickRecordTime(
-                                                record,
-                                                checkIn: true,
-                                              ),
-                                              child: Text(
-                                                _formatEntryTime(
-                                                  record.entry.checkInMinutes,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            OutlinedButton(
-                                              onPressed: () => _pickRecordTime(
-                                                record,
-                                                checkIn: false,
-                                              ),
-                                              child: Text(
-                                                _formatEntryTime(
-                                                  record.entry.checkOutMinutes,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              record.entry.grossWorkingHours
-                                                  .toStringAsFixed(2),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              '${record.entry.breakMinutes} min',
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              record.entry.workingHours
-                                                  .toStringAsFixed(2),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              DateTimeHelper.currency(
-                                                (record.entry.breakMinutes /
-                                                        60) *
-                                                    widget.employee
-                                                        .hourlyRateAt(
-                                                          record.date,
-                                                        ),
-                                              ),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              DateTimeHelper.currency(
-                                                record.entry.workingHours *
-                                                    widget.employee
-                                                        .hourlyRateAt(
-                                                          record.date,
-                                                        ),
-                                              ),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            SizedBox(
-                                              width: 280,
-                                              child: Text(
-                                                record.entry.attendanceNote ??
-                                                    '-',
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                ),
-              ],
+              );
+            }
+            return Center(
+              child: Text(
+                '${document.reference.fileName}\n'
+                '${document.reference.sizeBytes} bytes',
+                textAlign: TextAlign.center,
+              ),
             );
           },
         ),
@@ -1378,12 +1350,466 @@ class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
       ],
     );
   }
+}
+
+class AttendanceRecordsScreen extends StatefulWidget {
+  const AttendanceRecordsScreen({
+    required this.employee,
+    this.onBack,
+    super.key,
+  });
+
+  final EmployeeModel employee;
+  final VoidCallback? onBack;
+
+  @override
+  State<AttendanceRecordsScreen> createState() =>
+      _AttendanceRecordsScreenState();
+}
+
+class _AttendanceRecordsScreenState extends State<AttendanceRecordsScreen> {
+  static const _attendanceEditPin = '1122';
+
+  final _horizontalController = ScrollController();
+  final _verticalController = ScrollController();
+  _AttendanceViewMode _viewMode = _AttendanceViewMode.weekly;
+  DateTime _anchorDate = DateTime.now();
+  DateTimeRange? _customRange;
+  bool _isEditEnabled = false;
+
+  static const _statusOptions = ['Present', 'Absent', 'Holiday'];
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    _verticalController.dispose();
+    super.dispose();
+  }
+
+  DateTime get _periodStart {
+    if (_viewMode == _AttendanceViewMode.custom) {
+      return _customRange?.start ?? _anchorDate;
+    }
+    final date = DateTime(_anchorDate.year, _anchorDate.month, _anchorDate.day);
+    if (_viewMode == _AttendanceViewMode.monthly) {
+      return DateTime(date.year, date.month);
+    }
+    return date.subtract(Duration(days: date.weekday - DateTime.monday));
+  }
+
+  DateTime get _periodEnd {
+    if (_viewMode == _AttendanceViewMode.custom) {
+      return _customRange?.end ?? _anchorDate;
+    }
+    if (_viewMode == _AttendanceViewMode.monthly) {
+      return DateTime(_anchorDate.year, _anchorDate.month + 1, 0);
+    }
+    return _periodStart.add(const Duration(days: 6));
+  }
+
+  Future<void> _pickCalendarDate() async {
+    if (_viewMode == _AttendanceViewMode.custom) {
+      await _pickCustomRange();
+      return;
+    }
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _anchorDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _anchorDate = picked);
+  }
+
+  Future<void> _pickCustomRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange:
+          _customRange ?? DateTimeRange(start: _periodStart, end: _periodEnd),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      helpText: 'Select attendance date range',
+    );
+    if (picked == null) return;
+    setState(() {
+      _customRange = DateTimeRange(
+        start: DateTime(
+          picked.start.year,
+          picked.start.month,
+          picked.start.day,
+        ),
+        end: DateTime(picked.end.year, picked.end.month, picked.end.day),
+      );
+      _anchorDate = _customRange!.start;
+    });
+  }
+
+  void _movePeriod(int direction) {
+    setState(() {
+      if (_viewMode == _AttendanceViewMode.custom) {
+        final range = _customRange;
+        if (range == null) return;
+        final length = range.duration.inDays + 1;
+        final shift = Duration(days: length * direction);
+        _customRange = DateTimeRange(
+          start: range.start.add(shift),
+          end: range.end.add(shift),
+        );
+        _anchorDate = _customRange!.start;
+      } else {
+        _anchorDate = _viewMode == _AttendanceViewMode.weekly
+            ? _anchorDate.add(Duration(days: 7 * direction))
+            : DateTime(_anchorDate.year, _anchorDate.month + direction, 1);
+      }
+    });
+  }
+
+  Future<void> _unlockEditing() async {
+    if (_isEditEnabled) {
+      setState(() => _isEditEnabled = false);
+      return;
+    }
+
+    var enteredPin = '';
+    final unlocked = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unlock Attendance Editing'),
+        content: TextField(
+          autofocus: true,
+          obscureText: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [AppInputFormatters.digitsOnly],
+          decoration: const InputDecoration(
+            labelText: 'Owner PIN',
+            prefixIcon: Icon(Icons.lock_outline),
+          ),
+          onChanged: (value) => enteredPin = value,
+          onSubmitted: (_) {
+            Navigator.pop(dialogContext, enteredPin == _attendanceEditPin);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext, enteredPin == _attendanceEditPin);
+            },
+            child: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (unlocked == true) {
+      setState(() => _isEditEnabled = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Attendance editing enabled.')),
+      );
+    } else if (unlocked == false && enteredPin.isNotEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Incorrect owner PIN.')));
+    }
+  }
+
+  Future<void> _updateEntry(
+    _AttendanceRecord record,
+    DailyWorkEntry entry,
+  ) async {
+    if (!_isEditEnabled) return;
+    await context.read<EmployeeProvider>().upsertDailyEntry(
+      employeeId: widget.employee.id,
+      date: record.date,
+      entry: entry,
+    );
+    if (mounted) setState(() {});
+  }
+
+  List<AttendanceReportRow> _printRows(List<_AttendanceRecord> records) {
+    return [
+      for (final record in records)
+        AttendanceReportRow(
+          date: record.date,
+          entry: record.entry,
+          hourlyRate:
+              record.entry.hourlyRateOverride ??
+              widget.employee.hourlyRateAt(record.date),
+        ),
+    ];
+  }
+
+  Future<void> _print(List<_AttendanceRecord> records) {
+    return const PdfService().printAttendanceReport(
+      employee: widget.employee,
+      rows: _printRows(records),
+      periodStart: _periodStart,
+      periodEnd: _periodEnd,
+    );
+  }
+
+  Future<void> _share(List<_AttendanceRecord> records) async {
+    if (widget.employee.email.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add an email address to this employee profile before sending.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final shared = await const PdfService().shareAttendanceReport(
+      employee: widget.employee,
+      rows: _printRows(records),
+      periodStart: _periodStart,
+      periodEnd: _periodEnd,
+    );
+    if (!mounted || shared) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Email/share is not available on this device.'),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Back to employees',
+          onPressed: widget.onBack ?? () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${widget.employee.name} Attendance Records'),
+            Text(
+              '${widget.employee.id} | ${widget.employee.role}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: FilledButton.icon(
+              onPressed: _unlockEditing,
+              icon: Icon(
+                _isEditEnabled ? Icons.lock_open : Icons.edit_outlined,
+              ),
+              label: Text(_isEditEnabled ? 'Lock Editing' : 'Edit Records'),
+            ),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Consumer<EmployeeProvider>(
+          builder: (context, employeeProvider, child) {
+            final records = _attendanceRecords(employeeProvider);
+            final reportRows = _printRows(records);
+            final summary = AttendancePeriodSummary.fromRows(reportRows);
+            final absenceLabel = _viewMode == _AttendanceViewMode.weekly
+                ? 'This Week Absences'
+                : 'Period Absences';
+
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 850;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        SegmentedButton<_AttendanceViewMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: _AttendanceViewMode.weekly,
+                              icon: Icon(Icons.view_week_outlined),
+                              label: Text('Weekly'),
+                            ),
+                            ButtonSegment(
+                              value: _AttendanceViewMode.monthly,
+                              icon: Icon(Icons.calendar_month_outlined),
+                              label: Text('Monthly'),
+                            ),
+                            ButtonSegment(
+                              value: _AttendanceViewMode.custom,
+                              icon: Icon(Icons.date_range_outlined),
+                              label: Text('Custom'),
+                            ),
+                          ],
+                          selected: {_viewMode},
+                          onSelectionChanged: (selection) {
+                            setState(() {
+                              final previousStart = _periodStart;
+                              final previousEnd = _periodEnd;
+                              _viewMode = selection.first;
+                              if (_viewMode == _AttendanceViewMode.custom) {
+                                _customRange ??= DateTimeRange(
+                                  start: previousStart,
+                                  end: previousEnd,
+                                );
+                                _anchorDate = _customRange!.start;
+                              }
+                            });
+                          },
+                        ),
+                        IconButton(
+                          tooltip: 'Previous period',
+                          onPressed: () => _movePeriod(-1),
+                          icon: const Icon(Icons.chevron_left),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _pickCalendarDate,
+                          icon: const Icon(Icons.calendar_today_outlined),
+                          label: Text(
+                            '${DateTimeHelper.formatDate(_periodStart)} - '
+                            '${DateTimeHelper.formatDate(_periodEnd)}',
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Next period',
+                          onPressed: () => _movePeriod(1),
+                          icon: const Icon(Icons.chevron_right),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => _print(records),
+                          icon: const Icon(Icons.print_outlined),
+                          label: const Text('Print'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => _share(records),
+                          icon: const Icon(Icons.email_outlined),
+                          label: const Text('Email Report'),
+                        ),
+                        Chip(
+                          avatar: Icon(
+                            _isEditEnabled ? Icons.lock_open : Icons.lock,
+                            size: 18,
+                          ),
+                          label: Text(
+                            _isEditEnabled
+                                ? 'Editing enabled'
+                                : 'Read-only records',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _AttendanceSummaryTile(
+                          label: 'Gross Hours',
+                          value: summary.totalGrossHours.toStringAsFixed(2),
+                          icon: Icons.schedule_outlined,
+                          width: compact ? 160 : 185,
+                        ),
+                        _AttendanceSummaryTile(
+                          label: 'Break Deducted',
+                          value: '${summary.totalBreakMinutes} min',
+                          icon: Icons.free_breakfast_outlined,
+                          width: compact ? 160 : 185,
+                        ),
+                        _AttendanceSummaryTile(
+                          label: 'Net Hours',
+                          value: summary.totalNetHours.toStringAsFixed(2),
+                          icon: Icons.timelapse_outlined,
+                          width: compact ? 160 : 185,
+                        ),
+                        _AttendanceSummaryTile(
+                          label: 'Total Earnings',
+                          value: DateTimeHelper.currency(summary.totalEarnings),
+                          icon: Icons.payments_outlined,
+                          width: compact ? 160 : 185,
+                        ),
+                        _AttendanceSummaryTile(
+                          label: absenceLabel,
+                          value: summary.absentDays.toString(),
+                          icon: Icons.person_off_outlined,
+                          width: compact ? 160 : 185,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Break policy: deduct 15 minutes from each shift of at least 5 hours, or 30 minutes from each shift of at least 8 hours.',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: Scrollbar(
+                        controller: _horizontalController,
+                        thumbVisibility: true,
+                        trackVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _horizontalController,
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: 2500,
+                            child: Scrollbar(
+                              controller: _verticalController,
+                              thumbVisibility: true,
+                              trackVisibility: true,
+                              child: SingleChildScrollView(
+                                controller: _verticalController,
+                                child: DataTable(
+                                  columnSpacing: 24,
+                                  columns: const [
+                                    DataColumn(label: Text('Date')),
+                                    DataColumn(label: Text('Day')),
+                                    DataColumn(label: Text('Status')),
+                                    DataColumn(label: Text('Reason')),
+                                    DataColumn(label: Text('Check In')),
+                                    DataColumn(label: Text('Check Out')),
+                                    DataColumn(label: Text('Gross Hours')),
+                                    DataColumn(label: Text('Break Deducted')),
+                                    DataColumn(label: Text('Net Hours')),
+                                    DataColumn(label: Text('Hourly Rate')),
+                                    DataColumn(label: Text('Break Value')),
+                                    DataColumn(label: Text('Net Daily Pay')),
+                                    DataColumn(label: Text('Note')),
+                                  ],
+                                  rows: [
+                                    for (final record in records)
+                                      _attendanceRow(record),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   Future<void> _pickRecordTime(
     _AttendanceRecord record, {
     required bool checkIn,
   }) async {
-    final employeeProvider = context.read<EmployeeProvider>();
     final currentMinutes = checkIn
         ? record.entry.checkInMinutes
         : record.entry.checkOutMinutes;
@@ -1394,19 +1820,19 @@ class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
     );
     if (picked == null) return;
 
-    final entries = [...record.report.entries];
-    final original = entries[record.entryIndex];
-    entries[record.entryIndex] = DailyWorkEntry(
-      dayName: original.dayName,
-      checkInMinutes: checkIn ? _minutes(picked) : original.checkInMinutes,
-      checkOutMinutes: checkIn ? original.checkOutMinutes : _minutes(picked),
-      attendanceNote: original.attendanceNote,
+    final original = record.entry;
+    await _updateEntry(
+      record,
+      DailyWorkEntry(
+        dayName: original.dayName,
+        checkInMinutes: checkIn ? _minutes(picked) : original.checkInMinutes,
+        checkOutMinutes: checkIn ? original.checkOutMinutes : _minutes(picked),
+        attendanceNote: original.attendanceNote,
+        attendanceStatus: 'Present',
+        attendanceReason: original.attendanceReason,
+        hourlyRateOverride: original.hourlyRateOverride,
+      ),
     );
-
-    await employeeProvider.updateWeeklyReport(
-      record.report.copyWith(entries: entries),
-    );
-    _filterNotifier.value = _filterNotifier.value.copyWith();
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1419,61 +1845,170 @@ class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
     );
   }
 
-  List<_AttendanceRecord> _attendanceRecords(_AttendanceDateFilter filter) {
-    final reports = context.read<EmployeeProvider>().weeklyReportsFor(
-      widget.employee.id,
-    );
-    final records = <_AttendanceRecord>[];
-
-    for (final report in reports) {
-      for (var index = 0; index < report.entries.length; index++) {
-        final entry = report.entries[index];
-        if (!_hasAttendance(entry)) continue;
-
-        final date = report.weekStart.add(Duration(days: index));
-        if (!_isWithinDateFilter(date, filter)) continue;
-
-        records.add(
-          _AttendanceRecord(
-            date: date,
-            entry: entry,
-            report: report,
-            entryIndex: index,
+  DataRow _attendanceRow(_AttendanceRecord record) {
+    final entry = record.entry;
+    final rate =
+        entry.hourlyRateOverride ?? widget.employee.hourlyRateAt(record.date);
+    return DataRow(
+      cells: [
+        DataCell(Text(DateTimeHelper.formatDate(record.date))),
+        DataCell(Text(entry.dayName)),
+        DataCell(
+          SizedBox(
+            width: 135,
+            child: DropdownButton<String>(
+              value: _displayStatus(entry.attendanceStatus),
+              hint: const Text('Set status'),
+              isExpanded: true,
+              items: [
+                for (final status in _statusOptions)
+                  DropdownMenuItem(value: status, child: Text(status)),
+              ],
+              onChanged: !_isEditEnabled
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      _updateEntry(
+                        record,
+                        entry.copyWith(attendanceStatus: value),
+                      );
+                    },
+            ),
           ),
-        );
-      }
-    }
+        ),
+        DataCell(
+          SizedBox(
+            width: 190,
+            child: _AttendanceTextField(
+              key: ValueKey('reason-${record.date.toIso8601String()}'),
+              initialValue: entry.attendanceReason ?? '',
+              hintText: 'Status reason',
+              enabled: _isEditEnabled,
+              onSaved: (value) => _updateEntry(
+                record,
+                entry.copyWith(
+                  attendanceReason: value.trim(),
+                  clearAttendanceReason: value.trim().isEmpty,
+                ),
+              ),
+            ),
+          ),
+        ),
+        DataCell(
+          OutlinedButton(
+            onPressed: _canEditEntryTime(entry)
+                ? () => _pickRecordTime(record, checkIn: true)
+                : null,
+            child: Text(_formatEntryTime(entry.checkInMinutes)),
+          ),
+        ),
+        DataCell(
+          OutlinedButton(
+            onPressed: _canEditEntryTime(entry)
+                ? () => _pickRecordTime(record, checkIn: false)
+                : null,
+            child: Text(_formatEntryTime(entry.checkOutMinutes)),
+          ),
+        ),
+        DataCell(Text(entry.grossWorkingHours.toStringAsFixed(2))),
+        DataCell(Text('${entry.breakMinutes} min')),
+        DataCell(Text(entry.workingHours.toStringAsFixed(2))),
+        DataCell(
+          SizedBox(
+            width: 105,
+            child: _AttendanceTextField(
+              key: ValueKey('rate-${record.date.toIso8601String()}'),
+              initialValue: rate.toStringAsFixed(2),
+              hintText: 'Rate',
+              numeric: true,
+              enabled: _isEditEnabled,
+              onSaved: (value) {
+                final parsed = double.tryParse(value.trim());
+                if (parsed == null || parsed < 0) return;
+                _updateEntry(
+                  record,
+                  entry.copyWith(hourlyRateOverride: parsed),
+                );
+              },
+            ),
+          ),
+        ),
+        DataCell(
+          Text(DateTimeHelper.currency((entry.breakMinutes / 60) * rate)),
+        ),
+        DataCell(Text(DateTimeHelper.currency(entry.workingHours * rate))),
+        DataCell(
+          SizedBox(
+            width: 220,
+            child: _AttendanceTextField(
+              key: ValueKey('note-${record.date.toIso8601String()}'),
+              initialValue: entry.attendanceNote ?? '',
+              hintText: 'Attendance note',
+              enabled: _isEditEnabled,
+              onSaved: (value) => _updateEntry(
+                record,
+                DailyWorkEntry(
+                  dayName: entry.dayName,
+                  checkInMinutes: entry.checkInMinutes,
+                  checkOutMinutes: entry.checkOutMinutes,
+                  attendanceNote: value.trim(),
+                  attendanceStatus: entry.attendanceStatus,
+                  attendanceReason: entry.attendanceReason,
+                  hourlyRateOverride: entry.hourlyRateOverride,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-    records.sort((a, b) => b.date.compareTo(a.date));
+  List<_AttendanceRecord> _attendanceRecords(EmployeeProvider provider) {
+    final records = <_AttendanceRecord>[];
+    var date = _periodStart;
+    while (!date.isAfter(_periodEnd)) {
+      final saved = provider.dailyEntryForDate(
+        employeeId: widget.employee.id,
+        date: date,
+      );
+      final entry = saved == null
+          ? DailyWorkEntry(
+              dayName: DateFormat('EEEE').format(date),
+              attendanceStatus: 'Not Set',
+            )
+          : _normalizeLegacyBlankEntry(saved);
+      records.add(_AttendanceRecord(date: date, entry: entry));
+      date = date.add(const Duration(days: 1));
+    }
     return records;
   }
 
-  bool _hasAttendance(DailyWorkEntry entry) {
-    return entry.checkInMinutes != null ||
-        entry.checkOutMinutes != null ||
-        (entry.attendanceNote?.trim().isNotEmpty ?? false);
+  DailyWorkEntry _normalizeLegacyBlankEntry(DailyWorkEntry entry) {
+    final hasNoAttendanceData =
+        entry.checkInMinutes == null &&
+        entry.checkOutMinutes == null &&
+        (entry.attendanceNote?.trim().isEmpty ?? true) &&
+        (entry.attendanceReason?.trim().isEmpty ?? true);
+    if (entry.attendanceStatus == 'Present' && hasNoAttendanceData) {
+      return entry.copyWith(attendanceStatus: 'Not Set');
+    }
+    return entry;
   }
 
-  bool _isWithinDateFilter(DateTime date, _AttendanceDateFilter filter) {
-    final current = DateTime(date.year, date.month, date.day);
-    final from = filter.fromDate == null
-        ? null
-        : DateTime(
-            filter.fromDate!.year,
-            filter.fromDate!.month,
-            filter.fromDate!.day,
-          );
-    final to = filter.toDate == null
-        ? null
-        : DateTime(
-            filter.toDate!.year,
-            filter.toDate!.month,
-            filter.toDate!.day,
-          );
+  String? _displayStatus(String status) {
+    return switch (status.toLowerCase()) {
+      'present' => 'Present',
+      'absent' => 'Absent',
+      'holiday' || 'store holiday' || 'festival' => 'Holiday',
+      _ => null,
+    };
+  }
 
-    if (from != null && current.isBefore(from)) return false;
-    if (to != null && current.isAfter(to)) return false;
-    return true;
+  bool _canEditEntryTime(DailyWorkEntry entry) {
+    if (!_isEditEnabled) return false;
+    final status = _displayStatus(entry.attendanceStatus);
+    return status == null || status == 'Present';
   }
 
   String _formatEntryTime(int? minutes) {
@@ -1495,30 +2030,128 @@ class _AttendanceRecordsDialogState extends State<_AttendanceRecordsDialog> {
   }
 }
 
-class _AttendanceDateFilter {
-  const _AttendanceDateFilter({this.fromDate, this.toDate});
+class _AttendanceSummaryTile extends StatelessWidget {
+  const _AttendanceSummaryTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.width,
+  });
 
-  final DateTime? fromDate;
-  final DateTime? toDate;
+  final String label;
+  final String value;
+  final IconData icon;
+  final double width;
 
-  _AttendanceDateFilter copyWith({DateTime? fromDate, DateTime? toDate}) {
-    return _AttendanceDateFilter(
-      fromDate: fromDate ?? this.fromDate,
-      toDate: toDate ?? this.toDate,
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.07),
+          border: Border.all(
+            color: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.18),
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(icon, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
+enum _AttendanceViewMode { weekly, monthly, custom }
+
 class _AttendanceRecord {
-  const _AttendanceRecord({
-    required this.date,
-    required this.entry,
-    required this.report,
-    required this.entryIndex,
-  });
+  const _AttendanceRecord({required this.date, required this.entry});
 
   final DateTime date;
   final DailyWorkEntry entry;
-  final WeeklyWorkReportModel report;
-  final int entryIndex;
+}
+
+class _AttendanceTextField extends StatefulWidget {
+  const _AttendanceTextField({
+    required this.initialValue,
+    required this.hintText,
+    required this.onSaved,
+    this.numeric = false,
+    this.enabled = true,
+    super.key,
+  });
+
+  final String initialValue;
+  final String hintText;
+  final ValueChanged<String> onSaved;
+  final bool numeric;
+  final bool enabled;
+
+  @override
+  State<_AttendanceTextField> createState() => _AttendanceTextFieldState();
+}
+
+class _AttendanceTextFieldState extends State<_AttendanceTextField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      enabled: widget.enabled,
+      keyboardType: widget.numeric
+          ? const TextInputType.numberWithOptions(decimal: true)
+          : TextInputType.text,
+      inputFormatters: widget.numeric ? [AppInputFormatters.decimal4] : null,
+      decoration: InputDecoration(hintText: widget.hintText, isDense: true),
+      onSubmitted: widget.onSaved,
+      onTapOutside: (_) {
+        widget.onSaved(_controller.text);
+        FocusScope.of(context).unfocus();
+      },
+    );
+  }
 }

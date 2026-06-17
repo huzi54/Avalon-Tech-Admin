@@ -4,10 +4,12 @@ import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image/image.dart' as image;
 
 import '../app_config.dart';
 import '../models/attendance_model.dart';
+import '../models/employee_document_model.dart';
 import '../models/employee_model.dart';
 import '../models/payroll_model.dart';
 import '../models/remittance_model.dart';
@@ -65,7 +67,8 @@ class AppServiceException implements Exception {
 }
 
 class FirebaseService {
-  static const int _maxProfileDocumentBytes = 700 * 1024;
+  static const int _maxProfileDocumentBytes = 550 * 1024;
+  static const String _documentCacheBox = 'employeeDocumentCache';
 
   FirebaseService({
     FirebaseAuth? auth,
@@ -79,6 +82,7 @@ class FirebaseService {
   final bool isAvailable;
   final FirebaseAuth? _auth;
   final FirebaseFirestore? _firestore;
+  final Map<String, EmployeeDocumentData> _employeeDocumentCache = {};
 
   User? get currentUser => _auth?.currentUser;
   Stream<User?> authStateChanges() =>
@@ -333,26 +337,164 @@ class FirebaseService {
       final bytes = await _compressedBytes(file, extension);
       if (bytes.length > _maxProfileDocumentBytes) {
         throw const AppServiceException(
-          'Document is too large for employee profile storage. Please choose a smaller file under 700KB.',
+          'Document is too large after compression. Please choose a file under 550KB.',
         );
       }
       final storedExtension = isImage ? 'jpg' : extension;
+      final contentType = _contentType(storedExtension);
       final fileName =
           '$documentType-${DateTime.now().microsecondsSinceEpoch}.$storedExtension';
+      final documentId =
+          '$employeeId-$documentType-${DateTime.now().microsecondsSinceEpoch}';
+      final compressedForStorage = _gzipIfSmaller(bytes);
+      final createdAt = DateTime.now();
 
-      // Firebase Storage is intentionally not used here. For this desktop app
-      // flow, documents are compressed and embedded directly in the employee
-      // Firestore profile as a compact JSON payload with Base64 file data.
-      return jsonEncode({
-        'storageType': 'firestoreBase64',
-        'employeeId': employeeId,
-        'documentType': documentType,
-        'fileName': fileName,
-        'contentType': _contentType(storedExtension),
-        'sizeBytes': bytes.length,
-        'base64Data': base64Encode(bytes),
-        'createdAt': DateTime.now().toIso8601String(),
-      });
+      // Each file has its own Firestore document. This keeps the employee
+      // profile well below Firestore's 1 MiB document limit.
+      await _firestore!
+          .collection(AppConfig.employeeDocumentsCollection)
+          .doc(documentId)
+          .set({
+            'storageType': 'firestoreBase64',
+            'employeeId': employeeId,
+            'documentType': documentType,
+            'fileName': fileName,
+            'contentType': contentType,
+            'sizeBytes': bytes.length,
+            'encoding': compressedForStorage.isGzipped ? 'gzip' : 'identity',
+            'base64Data': base64Encode(compressedForStorage.bytes),
+            'createdAt': createdAt.toIso8601String(),
+          });
+
+      final reference = EmployeeDocumentReference(
+        id: documentId,
+        employeeId: employeeId,
+        documentType: documentType,
+        fileName: fileName,
+        contentType: contentType,
+        sizeBytes: bytes.length,
+        createdAt: createdAt,
+      );
+      _employeeDocumentCache[documentId] = EmployeeDocumentData(
+        reference: reference,
+        bytes: bytes,
+      );
+      await _writeDocumentCache(reference, bytes);
+      return reference.toStoredValue();
+    });
+  }
+
+  Future<EmployeeDocumentData> fetchEmployeeDocument(String storedReference) {
+    return _guard(() async {
+      final payload = Map<String, dynamic>.from(
+        jsonDecode(storedReference) as Map,
+      );
+
+      // Compatibility with employee profiles created before documents were
+      // moved into their own Firestore collection.
+      final legacyBase64 = payload['base64Data'] as String?;
+      if (legacyBase64 != null && legacyBase64.isNotEmpty) {
+        final cacheKey = 'legacy-${storedReference.hashCode}';
+        final cached = _employeeDocumentCache[cacheKey];
+        if (cached != null) return cached;
+        final reference = EmployeeDocumentReference.fromStoredValue(
+          storedReference,
+        );
+        final persisted = await _readDocumentCache(reference, key: cacheKey);
+        if (persisted != null) {
+          _employeeDocumentCache[cacheKey] = persisted;
+          return persisted;
+        }
+        final document = EmployeeDocumentData(
+          reference: reference,
+          bytes: base64Decode(legacyBase64),
+        );
+        _employeeDocumentCache[cacheKey] = document;
+        await _writeDocumentCache(reference, document.bytes, key: cacheKey);
+        return document;
+      }
+
+      final reference = EmployeeDocumentReference.fromStoredValue(
+        storedReference,
+      );
+      if (reference.id.isEmpty) {
+        throw const AppServiceException('Invalid employee document reference.');
+      }
+      final cached = _employeeDocumentCache[reference.id];
+      if (cached != null) return cached;
+      final persisted = await _readDocumentCache(reference);
+      if (persisted != null) {
+        _employeeDocumentCache[reference.id] = persisted;
+        return persisted;
+      }
+
+      final snapshot = await _firestore!
+          .collection(AppConfig.employeeDocumentsCollection)
+          .doc(reference.id)
+          .get();
+      final data = snapshot.data();
+      if (!snapshot.exists || data == null) {
+        throw const AppServiceException('Employee document was not found.');
+      }
+
+      var bytes = base64Decode(data['base64Data'] as String? ?? '');
+      if (data['encoding'] == 'gzip') {
+        bytes = Uint8List.fromList(gzip.decode(bytes));
+      }
+      final document = EmployeeDocumentData(reference: reference, bytes: bytes);
+      _employeeDocumentCache[reference.id] = document;
+      await _writeDocumentCache(reference, bytes);
+      return document;
+    });
+  }
+
+  bool isEmployeeDocumentCached(String storedReference) {
+    try {
+      final payload = Map<String, dynamic>.from(
+        jsonDecode(storedReference) as Map,
+      );
+      if (payload['base64Data'] != null) {
+        return _employeeDocumentCache.containsKey(
+          'legacy-${storedReference.hashCode}',
+        );
+      }
+      final reference = EmployeeDocumentReference.fromStoredValue(
+        storedReference,
+      );
+      return _employeeDocumentCache.containsKey(reference.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<EmployeeDocumentData?> _readDocumentCache(
+    EmployeeDocumentReference reference, {
+    String? key,
+  }) async {
+    final box = await Hive.openBox<Map>(_documentCacheBox);
+    final cacheKey = key ?? reference.id;
+    final cached = box.get(cacheKey);
+    if (cached == null) return null;
+    try {
+      final map = Map<String, dynamic>.from(cached);
+      final bytes = base64Decode(map['base64Data'] as String? ?? '');
+      if (bytes.isEmpty) return null;
+      return EmployeeDocumentData(reference: reference, bytes: bytes);
+    } catch (_) {
+      await box.delete(cacheKey);
+      return null;
+    }
+  }
+
+  Future<void> _writeDocumentCache(
+    EmployeeDocumentReference reference,
+    Uint8List bytes, {
+    String? key,
+  }) async {
+    final box = await Hive.openBox<Map>(_documentCacheBox);
+    await box.put(key ?? reference.id, {
+      'base64Data': base64Encode(bytes),
+      'cachedAt': DateTime.now().toIso8601String(),
     });
   }
 
@@ -380,6 +522,14 @@ class FirebaseService {
     }
 
     return bytes;
+  }
+
+  _StoredDocumentBytes _gzipIfSmaller(Uint8List bytes) {
+    final compressed = Uint8List.fromList(gzip.encode(bytes));
+    if (compressed.length < bytes.length) {
+      return _StoredDocumentBytes(bytes: compressed, isGzipped: true);
+    }
+    return _StoredDocumentBytes(bytes: bytes, isGzipped: false);
   }
 
   String _contentType(String extension) {
@@ -438,4 +588,11 @@ class FirebaseService {
     }
     return error.message ?? 'Firebase request failed.';
   }
+}
+
+class _StoredDocumentBytes {
+  const _StoredDocumentBytes({required this.bytes, required this.isGzipped});
+
+  final Uint8List bytes;
+  final bool isGzipped;
 }

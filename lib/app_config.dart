@@ -9,6 +9,7 @@ class AppConfig {
       '31 Peet St Suite 105, St. John\'s, NL A1B 3W8, Canada';
   static const String logoPath = 'assets/images/logo.png';
   static const String defaultLanguage = 'en';
+  static const String companyEmail = 'avalontech@hotmail.com';
   static const String supportEmail = 'support@avalontechandtailor.ca';
   static const String province = 'Newfoundland and Labrador';
 
@@ -21,6 +22,7 @@ class AppConfig {
   static const Color borderColor = Color(0xFFD7E0DD);
 
   static const String employeesCollection = 'employees';
+  static const String employeeDocumentsCollection = 'employeeDocuments';
   static const String payrollsCollection = 'payrolls';
   static const String remittancesCollection = 'remittances';
   static const String attendanceCollection = 'attendance';

@@ -1,4 +1,7 @@
+import 'package:flutter_payroll_app/models/attendance_report_model.dart';
+import 'package:flutter_payroll_app/models/employee_model.dart';
 import 'package:flutter_payroll_app/models/payroll_model.dart';
+import 'package:flutter_payroll_app/models/weekly_work_report_model.dart';
 import 'package:flutter_payroll_app/services/pdf_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -61,5 +64,44 @@ void main() {
 
     expect(employeePdf, isNotEmpty);
     expect(ownerPdf.length, greaterThan(employeePdf.length));
+  });
+
+  test('builds printable weekly attendance report', () async {
+    const employee = EmployeeModel(
+      id: 'EMP-1001',
+      name: 'John Doe',
+      email: 'john@example.com',
+      role: 'Tailor',
+      hourlyRate: 25,
+    );
+    final rows = [
+      AttendanceReportRow(
+        date: DateTime(2026, 6, 15),
+        entry: const DailyWorkEntry(
+          dayName: 'Monday',
+          checkInMinutes: 9 * 60,
+          checkOutMinutes: 17 * 60,
+        ),
+        hourlyRate: 25,
+      ),
+      AttendanceReportRow(
+        date: DateTime(2026, 6, 16),
+        entry: const DailyWorkEntry(
+          dayName: 'Tuesday',
+          attendanceStatus: 'Festival',
+          attendanceReason: 'Community festival',
+        ),
+        hourlyRate: 25,
+      ),
+    ];
+
+    final bytes = await const PdfService().buildAttendanceReport(
+      employee: employee,
+      rows: rows,
+      periodStart: DateTime(2026, 6, 15),
+      periodEnd: DateTime(2026, 6, 21),
+    );
+
+    expect(bytes, isNotEmpty);
   });
 }

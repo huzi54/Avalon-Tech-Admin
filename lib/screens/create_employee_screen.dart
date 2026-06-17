@@ -37,6 +37,7 @@ class _CreateEmployeeScreenState extends State<CreateEmployeeScreen> {
   DateTime? _joiningDate;
   DateTime? _endDate;
   String? _legalStatus;
+  String _employmentType = 'Full-time';
   String? _passportFilePath;
   String? _workPermitFilePath;
   String? _offerLetterFilePath;
@@ -48,6 +49,16 @@ class _CreateEmployeeScreenState extends State<CreateEmployeeScreen> {
     'Work Permit',
     'Student Permit',
     'Visitor Record',
+    'Other',
+  ];
+  static const _employmentTypes = [
+    'Full-time',
+    'Part-time',
+    'Contract',
+    'Seasonal',
+    'Temporary',
+    'Casual',
+    'Internship',
     'Other',
   ];
 
@@ -112,6 +123,7 @@ class _CreateEmployeeScreenState extends State<CreateEmployeeScreen> {
             ? 'Employee'
             : _roleController.text.trim(),
         hourlyRate: double.parse(_hourlyRateController.text.trim()),
+        employmentType: _employmentType,
         defaultHours: double.parse(_hoursController.text.trim()),
         phone: _emptyToNull(_phoneController.text),
         department: _emptyToNull(_departmentController.text),
@@ -405,6 +417,25 @@ class _CreateEmployeeScreenState extends State<CreateEmployeeScreen> {
                                           onChanged: (value) =>
                                               _endDate = value,
                                         ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: width,
+                                      child: _DropdownField(
+                                        label: 'Employment Type',
+                                        hint: 'Select employment type',
+                                        icon: Icons.badge_outlined,
+                                        value: _employmentType,
+                                        required: true,
+                                        items: _employmentTypes,
+                                        onChanged: (value) {
+                                          if (value == null) return;
+                                          setState(
+                                            () => _employmentType = value,
+                                          );
+                                        },
+                                        validator: (value) =>
+                                            value == null ? 'Required' : null,
                                       ),
                                     ),
                                     SizedBox(
@@ -851,7 +882,7 @@ class _DocumentDropField extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       fileName == null
-                          ? 'PDF, JPG, PNG (stored in profile, max 700KB)'
+                          ? 'PDF, JPG, PNG (compressed and stored in Firebase, max 550KB)'
                           : path!,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,

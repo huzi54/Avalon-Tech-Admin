@@ -5,6 +5,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../app_config.dart';
+import '../models/attendance_report_model.dart';
+import '../models/employee_model.dart';
 import '../models/payroll_model.dart';
 import '../models/remittance_model.dart';
 import '../utils/date_time_helper.dart';
@@ -949,7 +951,7 @@ class PdfService {
                       pw.SizedBox(width: 8),
                       pw.Expanded(
                         child: pw.Text(
-                          'Payment date or method may vary due to holidays, banking delays, or system issues. Includes a 30-minute unpaid lunch break as per Canadian labour rules. Salary reflects approved payroll adjustments and authorized deductions.',
+                          'Payment date or method may vary due to holidays, banking delays, or system issues. Attendance deducts a 15-minute unpaid break for shifts of at least 5 hours and a 30-minute unpaid break for shifts of at least 8 hours. Salary reflects approved payroll adjustments and authorized deductions.',
                           style: base(size: 7),
                         ),
                       ),
@@ -1654,5 +1656,224 @@ class PdfService {
     return Printing.layoutPdf(
       onLayout: (_) => buildRemittanceList(remittances),
     );
+  }
+
+  Future<Uint8List> buildAttendanceReport({
+    required EmployeeModel employee,
+    required List<AttendanceReportRow> rows,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) async {
+    final pdf = pw.Document();
+    final navy = PdfColor.fromHex('#071846');
+    final border = PdfColor.fromHex('#CBD5E1');
+    final header = PdfColor.fromHex('#EEF4FF');
+
+    pw.Widget cell(
+      String value, {
+      bool bold = false,
+      PdfColor? color,
+      pw.TextAlign align = pw.TextAlign.left,
+    }) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+        color: color,
+        child: pw.Text(
+          value,
+          textAlign: align,
+          style: pw.TextStyle(
+            fontSize: 7,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+      );
+    }
+
+    final summary = AttendancePeriodSummary.fromRows(rows);
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(24),
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              AppConfig.companyName,
+              style: pw.TextStyle(
+                color: navy,
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.Text(AppConfig.companyAddress),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'EMPLOYEE ATTENDANCE REPORT',
+              style: pw.TextStyle(
+                color: navy,
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.Text(
+              '${employee.name} (${employee.id}) | '
+              '${DateTimeHelper.formatDate(periodStart)} - '
+              '${DateTimeHelper.formatDate(periodEnd)}',
+            ),
+            pw.SizedBox(height: 10),
+          ],
+        ),
+        footer: (_) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Printed ${DateTimeHelper.formatDateTime(DateTime.now())}',
+            style: const pw.TextStyle(fontSize: 7),
+          ),
+        ),
+        build: (_) => [
+          pw.Table(
+            border: pw.TableBorder.all(color: border, width: 0.5),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(0.9),
+              1: pw.FlexColumnWidth(0.75),
+              2: pw.FlexColumnWidth(0.9),
+              3: pw.FlexColumnWidth(0.8),
+              4: pw.FlexColumnWidth(0.8),
+              5: pw.FlexColumnWidth(0.65),
+              6: pw.FlexColumnWidth(0.65),
+              7: pw.FlexColumnWidth(0.65),
+              8: pw.FlexColumnWidth(0.75),
+              9: pw.FlexColumnWidth(0.85),
+              10: pw.FlexColumnWidth(1.4),
+            },
+            children: [
+              pw.TableRow(
+                children: [
+                  cell('Date', bold: true, color: header),
+                  cell('Day', bold: true, color: header),
+                  cell('Status', bold: true, color: header),
+                  cell('In', bold: true, color: header),
+                  cell('Out', bold: true, color: header),
+                  cell('Gross', bold: true, color: header),
+                  cell('Break', bold: true, color: header),
+                  cell('Net', bold: true, color: header),
+                  cell('Rate', bold: true, color: header),
+                  cell('Net Pay', bold: true, color: header),
+                  cell('Reason / Note', bold: true, color: header),
+                ],
+              ),
+              for (final row in rows)
+                pw.TableRow(
+                  children: [
+                    cell(DateTimeHelper.formatDate(row.date)),
+                    cell(row.entry.dayName),
+                    cell(_attendanceStatus(row.entry.attendanceStatus)),
+                    cell(_attendanceTime(row.entry.checkInMinutes)),
+                    cell(_attendanceTime(row.entry.checkOutMinutes)),
+                    cell(row.entry.grossWorkingHours.toStringAsFixed(2)),
+                    cell('${row.entry.breakMinutes} min'),
+                    cell(row.entry.workingHours.toStringAsFixed(2)),
+                    cell(DateTimeHelper.currency(row.hourlyRate)),
+                    cell(DateTimeHelper.currency(row.netPay)),
+                    cell(
+                      [row.entry.attendanceReason, row.entry.attendanceNote]
+                          .whereType<String>()
+                          .where((value) {
+                            return value.trim().isNotEmpty;
+                          })
+                          .join(' | '),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          pw.SizedBox(height: 10),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Gross Hours: ${summary.totalGrossHours.toStringAsFixed(2)}   '
+              'Break Deducted: ${summary.totalBreakMinutes} min   '
+              'Net Hours: ${summary.totalNetHours.toStringAsFixed(2)}   '
+              'Absences: ${summary.absentDays}   '
+              'Total Earnings: '
+              '${DateTimeHelper.currency(summary.totalEarnings)}',
+              style: pw.TextStyle(
+                color: navy,
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  Future<void> printAttendanceReport({
+    required EmployeeModel employee,
+    required List<AttendanceReportRow> rows,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) {
+    return Printing.layoutPdf(
+      onLayout: (_) => buildAttendanceReport(
+        employee: employee,
+        rows: rows,
+        periodStart: periodStart,
+        periodEnd: periodEnd,
+      ),
+    );
+  }
+
+  Future<bool> shareAttendanceReport({
+    required EmployeeModel employee,
+    required List<AttendanceReportRow> rows,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+  }) async {
+    final bytes = await buildAttendanceReport(
+      employee: employee,
+      rows: rows,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
+    );
+    return Printing.sharePdf(
+      bytes: bytes,
+      filename:
+          'attendance-${employee.id}-${periodStart.year}-${periodStart.month}.pdf',
+      subject:
+          '${AppConfig.companyName} - Attendance Report - ${employee.name} '
+          '(${DateTimeHelper.formatDate(periodStart)} to '
+          '${DateTimeHelper.formatDate(periodEnd)})',
+      body:
+          'Hello ${employee.name},\n\n'
+          'Please find attached your attendance report for '
+          '${DateTimeHelper.formatDate(periodStart)} to '
+          '${DateTimeHelper.formatDate(periodEnd)}.\n\n'
+          'Regards,\n'
+          '${AppConfig.companyName}\n'
+          '${AppConfig.companyEmail}',
+      emails: employee.email.isEmpty ? null : [employee.email],
+    );
+  }
+
+  String _attendanceTime(int? minutes) {
+    if (minutes == null) return '-';
+    final hour24 = minutes ~/ 60;
+    final minute = (minutes % 60).toString().padLeft(2, '0');
+    final period = hour24 >= 12 ? 'PM' : 'AM';
+    final hour = hour24 % 12 == 0 ? 12 : hour24 % 12;
+    return '$hour:$minute $period';
+  }
+
+  String _attendanceStatus(String status) {
+    return switch (status.toLowerCase()) {
+      'present' => 'Present',
+      'absent' => 'Absent',
+      'holiday' || 'store holiday' || 'festival' => 'Holiday',
+      _ => '-',
+    };
   }
 }

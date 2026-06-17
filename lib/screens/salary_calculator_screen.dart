@@ -189,15 +189,68 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
 
   Future<void> _pickDate(
     DateTime initial,
-    ValueChanged<DateTime> update,
-  ) async {
+    ValueChanged<DateTime> update, {
+    SelectableDayPredicate? selectableDayPredicate,
+  }) async {
+    final pickerInitial = _nearestSelectableDate(
+      initial,
+      selectableDayPredicate,
+    );
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial,
+      initialDate: pickerInitial,
       firstDate: DateTime(2020),
       lastDate: DateTime(2035),
+      selectableDayPredicate: selectableDayPredicate,
     );
     if (picked != null) setState(() => update(picked));
+  }
+
+  DateTime _nearestSelectableDate(
+    DateTime initial,
+    SelectableDayPredicate? predicate,
+  ) {
+    if (predicate == null || predicate(initial)) return initial;
+    for (var offset = 1; offset <= 3650; offset++) {
+      final after = initial.add(Duration(days: offset));
+      if (!after.isAfter(DateTime(2035, 12, 31)) && predicate(after)) {
+        return after;
+      }
+      final before = initial.subtract(Duration(days: offset));
+      if (!before.isBefore(DateTime(2020)) && predicate(before)) {
+        return before;
+      }
+    }
+    return DateTime(2035, 12, 31);
+  }
+
+  bool _isUnlockedDate(DateTime date) {
+    final employee = _selectedEmployee;
+    if (employee == null) return true;
+    return !context.read<PayrollProvider>().isPayrollDateLocked(
+      employeeId: employee.id,
+      date: date,
+      excludingPayrollId: _editingPayrollId,
+    );
+  }
+
+  bool _isValidEndDate(DateTime date) {
+    final start = DateTime(
+      _periodStart.year,
+      _periodStart.month,
+      _periodStart.day,
+    );
+    final candidate = DateTime(date.year, date.month, date.day);
+    if (candidate.isBefore(start)) return false;
+    final employee = _selectedEmployee;
+    if (employee == null) return true;
+    return context.read<PayrollProvider>().conflictingPayroll(
+          employeeId: employee.id,
+          payPeriodStart: start,
+          payPeriodEnd: candidate,
+          excludingPayrollId: _editingPayrollId,
+        ) ==
+        null;
   }
 
   PayrollCalculationResult _calculation(PayrollProvider provider) {
@@ -221,58 +274,84 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
         ? _customTaxableTypeController.text.trim()
         : _otherTaxableType;
     final editingPayrollId = _editingPayrollId;
-    final payroll = editingPayrollId == null
-        ? await provider.calculateAndSave(
-            employee: employee.copyWith(hourlyRate: _number(_rateController)),
-            hours: _number(_hoursController),
-            payPeriodStart: _periodStart,
-            payPeriodEnd: _periodEnd,
-            payDate: _payDate,
-            payFrequency: _payFrequency,
-            numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
-            regularIncomeOverride: _attendanceRegularIncomeOverride(),
-            otherTaxableIncome: _number(_taxableController),
-            otherTaxableLabel: taxableLabel,
-            otherNonTaxableIncome: _number(_nonTaxableIncomeController),
-            nonTaxableIncomeReason: _nonTaxableIncomeReason == 'Other'
-                ? _otherIncomeReasonController.text.trim()
-                : _nonTaxableIncomeReason,
-            otherNonTaxableDeduction: _number(_nonTaxableController),
-            nonTaxableDeductionReason: _deductionReason == 'Other'
-                ? _otherReasonController.text.trim()
-                : _deductionReason,
-            nonTaxableDeductionNote:
-                _nonTaxableNoteController.text.trim().isEmpty
-                ? null
-                : _nonTaxableNoteController.text.trim(),
-          )
-        : await provider.updateCalculatedPayroll(
-            payrollId: editingPayrollId,
-            employee: employee.copyWith(hourlyRate: _number(_rateController)),
-            hours: _number(_hoursController),
-            payPeriodStart: _periodStart,
-            payPeriodEnd: _periodEnd,
-            payDate: _payDate,
-            payFrequency: _payFrequency,
-            numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
-            regularIncomeOverride: _attendanceRegularIncomeOverride(),
-            otherTaxableIncome: _number(_taxableController),
-            otherTaxableLabel: taxableLabel,
-            otherNonTaxableIncome: _number(_nonTaxableIncomeController),
-            nonTaxableIncomeReason: _nonTaxableIncomeReason == 'Other'
-                ? _otherIncomeReasonController.text.trim()
-                : _nonTaxableIncomeReason,
-            otherNonTaxableDeduction: _number(_nonTaxableController),
-            nonTaxableDeductionReason: _deductionReason == 'Other'
-                ? _otherReasonController.text.trim()
-                : _deductionReason,
-            nonTaxableDeductionNote:
-                _nonTaxableNoteController.text.trim().isEmpty
-                ? null
-                : _nonTaxableNoteController.text.trim(),
-          );
+    if (_periodEnd.isBefore(_periodStart)) {
+      _showPeriodError('Pay period end date cannot be before the start date.');
+      return;
+    }
+    final conflict = provider.conflictingPayroll(
+      employeeId: employee.id,
+      payPeriodStart: _periodStart,
+      payPeriodEnd: _periodEnd,
+      excludingPayrollId: editingPayrollId,
+    );
+    if (conflict != null) {
+      _showPeriodError(
+        'A pay slip already exists for this employee from '
+        '${DateTimeHelper.formatDate(conflict.payPeriodStart)} to '
+        '${DateTimeHelper.formatDate(conflict.payPeriodEnd)}.',
+      );
+      return;
+    }
+
+    PayrollModel? payroll;
+    try {
+      payroll = editingPayrollId == null
+          ? await provider.calculateAndSave(
+              employee: employee.copyWith(hourlyRate: _number(_rateController)),
+              hours: _number(_hoursController),
+              payPeriodStart: _periodStart,
+              payPeriodEnd: _periodEnd,
+              payDate: _payDate,
+              payFrequency: _payFrequency,
+              numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
+              regularIncomeOverride: _attendanceRegularIncomeOverride(),
+              otherTaxableIncome: _number(_taxableController),
+              otherTaxableLabel: taxableLabel,
+              otherNonTaxableIncome: _number(_nonTaxableIncomeController),
+              nonTaxableIncomeReason: _nonTaxableIncomeReason == 'Other'
+                  ? _otherIncomeReasonController.text.trim()
+                  : _nonTaxableIncomeReason,
+              otherNonTaxableDeduction: _number(_nonTaxableController),
+              nonTaxableDeductionReason: _deductionReason == 'Other'
+                  ? _otherReasonController.text.trim()
+                  : _deductionReason,
+              nonTaxableDeductionNote:
+                  _nonTaxableNoteController.text.trim().isEmpty
+                  ? null
+                  : _nonTaxableNoteController.text.trim(),
+            )
+          : await provider.updateCalculatedPayroll(
+              payrollId: editingPayrollId,
+              employee: employee.copyWith(hourlyRate: _number(_rateController)),
+              hours: _number(_hoursController),
+              payPeriodStart: _periodStart,
+              payPeriodEnd: _periodEnd,
+              payDate: _payDate,
+              payFrequency: _payFrequency,
+              numberOfPayPeriods: int.tryParse(_periodsController.text) ?? 26,
+              regularIncomeOverride: _attendanceRegularIncomeOverride(),
+              otherTaxableIncome: _number(_taxableController),
+              otherTaxableLabel: taxableLabel,
+              otherNonTaxableIncome: _number(_nonTaxableIncomeController),
+              nonTaxableIncomeReason: _nonTaxableIncomeReason == 'Other'
+                  ? _otherIncomeReasonController.text.trim()
+                  : _nonTaxableIncomeReason,
+              otherNonTaxableDeduction: _number(_nonTaxableController),
+              nonTaxableDeductionReason: _deductionReason == 'Other'
+                  ? _otherReasonController.text.trim()
+                  : _deductionReason,
+              nonTaxableDeductionNote:
+                  _nonTaxableNoteController.text.trim().isEmpty
+                  ? null
+                  : _nonTaxableNoteController.text.trim(),
+            );
+    } on PayrollPeriodConflictException catch (error) {
+      _showPeriodError(error.message);
+      return;
+    }
 
     if (payroll == null) return;
+    final savedPayroll = payroll;
 
     if (!mounted) return;
     await showDialog<void>(
@@ -283,7 +362,7 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
         ),
         content: Text(
           'Final Payable Amount: '
-          '${DateTimeHelper.currency(payroll.finalPayableAmount)}',
+          '${DateTimeHelper.currency(savedPayroll.finalPayableAmount)}',
         ),
         actions: [
           TextButton(
@@ -294,8 +373,15 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
       ),
     );
     if (editingPayrollId != null && mounted && Navigator.canPop(context)) {
-      Navigator.pop(context, payroll);
+      Navigator.pop(context, savedPayroll);
     }
+  }
+
+  void _showPeriodError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+    );
   }
 
   double _number(TextEditingController controller) {
@@ -400,15 +486,26 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 12),
-              _dateButton('Pay Period Start', _periodStart, (value) {
-                _periodStart = value;
-                _fillFromAttendance(force: true);
-              }),
+              _dateButton(
+                'Pay Period Start',
+                _periodStart,
+                (value) {
+                  _periodStart = value;
+                  if (_periodEnd.isBefore(value)) _periodEnd = value;
+                  _fillFromAttendance(force: true);
+                },
+                selectableDayPredicate: _isUnlockedDate,
+              ),
               const SizedBox(height: 12),
-              _dateButton('Pay Period End', _periodEnd, (value) {
-                _periodEnd = value;
-                _fillFromAttendance(force: true);
-              }),
+              _dateButton(
+                'Pay Period End',
+                _periodEnd,
+                (value) {
+                  _periodEnd = value;
+                  _fillFromAttendance(force: true);
+                },
+                selectableDayPredicate: _isValidEndDate,
+              ),
               const SizedBox(height: 12),
               _dateButton('Pay Date', _payDate, (value) {
                 _payDate = value;
@@ -560,11 +657,16 @@ class _SalaryCalculatorScreenState extends State<SalaryCalculatorScreen> {
   Widget _dateButton(
     String label,
     DateTime value,
-    ValueChanged<DateTime> update,
-  ) {
+    ValueChanged<DateTime> update, {
+    SelectableDayPredicate? selectableDayPredicate,
+  }) {
     return OutlinedButton.icon(
       icon: const Icon(Icons.calendar_month_outlined),
-      onPressed: () => _pickDate(value, update),
+      onPressed: () => _pickDate(
+        value,
+        update,
+        selectableDayPredicate: selectableDayPredicate,
+      ),
       label: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [Text(label), Text(DateTimeHelper.formatDate(value))],

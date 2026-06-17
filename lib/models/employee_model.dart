@@ -5,6 +5,7 @@ class EmployeeModel {
     required this.email,
     required this.role,
     required this.hourlyRate,
+    this.employmentType = 'Full-time',
     this.defaultHours = 80,
     this.phone,
     this.department,
@@ -26,6 +27,7 @@ class EmployeeModel {
   final String email;
   final String role;
   final double hourlyRate;
+  final String employmentType;
   final double defaultHours;
   final String? phone;
   final String? department;
@@ -59,6 +61,7 @@ class EmployeeModel {
     String? email,
     String? role,
     double? hourlyRate,
+    String? employmentType,
     double? defaultHours,
     String? phone,
     String? department,
@@ -80,6 +83,7 @@ class EmployeeModel {
       email: email ?? this.email,
       role: role ?? this.role,
       hourlyRate: hourlyRate ?? this.hourlyRate,
+      employmentType: employmentType ?? this.employmentType,
       defaultHours: defaultHours ?? this.defaultHours,
       phone: phone ?? this.phone,
       department: department ?? this.department,
@@ -106,6 +110,7 @@ class EmployeeModel {
       email: map['email'] as String? ?? '',
       role: map['role'] as String? ?? 'Employee',
       hourlyRate: (map['hourlyRate'] as num? ?? 0).toDouble(),
+      employmentType: map['employmentType'] as String? ?? 'Full-time',
       defaultHours: (map['defaultHours'] as num? ?? 80).toDouble(),
       phone: map['phone'] as String?,
       department: map['department'] as String?,
@@ -140,6 +145,7 @@ class EmployeeModel {
       'email': email,
       'role': role,
       'hourlyRate': hourlyRate,
+      'employmentType': employmentType,
       'defaultHours': defaultHours,
       'phone': phone,
       'department': department,

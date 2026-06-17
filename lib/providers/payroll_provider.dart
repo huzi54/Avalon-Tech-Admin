@@ -28,6 +28,42 @@ class PayrollProvider extends ChangeNotifier {
   List<PayrollModel> get payrolls => List.unmodifiable(_payrolls);
   List<RemittanceModel> get remittances => List.unmodifiable(_remittances);
 
+  bool isPayrollDateLocked({
+    required String employeeId,
+    required DateTime date,
+    String? excludingPayrollId,
+  }) {
+    final target = DateTime(date.year, date.month, date.day);
+    return _payrolls.any((payroll) {
+      if (payroll.employeeId != employeeId ||
+          payroll.id == excludingPayrollId) {
+        return false;
+      }
+      final start = _dateOnly(payroll.payPeriodStart);
+      final end = _dateOnly(payroll.payPeriodEnd);
+      return !target.isBefore(start) && !target.isAfter(end);
+    });
+  }
+
+  PayrollModel? conflictingPayroll({
+    required String employeeId,
+    required DateTime payPeriodStart,
+    required DateTime payPeriodEnd,
+    String? excludingPayrollId,
+  }) {
+    final start = _dateOnly(payPeriodStart);
+    final end = _dateOnly(payPeriodEnd);
+    return _payrolls.where((payroll) {
+      if (payroll.employeeId != employeeId ||
+          payroll.id == excludingPayrollId) {
+        return false;
+      }
+      final existingStart = _dateOnly(payroll.payPeriodStart);
+      final existingEnd = _dateOnly(payroll.payPeriodEnd);
+      return !end.isBefore(existingStart) && !start.isAfter(existingEnd);
+    }).firstOrNull;
+  }
+
   String otherTaxableLabel(String payrollId) =>
       _otherTaxableLabels[payrollId] ?? 'Other Taxable Income';
 
@@ -106,6 +142,11 @@ class PayrollProvider extends ChangeNotifier {
     String? nonTaxableDeductionReason,
     String? nonTaxableDeductionNote,
   }) async {
+    _validateAvailablePayPeriod(
+      employeeId: employee.id,
+      payPeriodStart: payPeriodStart,
+      payPeriodEnd: payPeriodEnd,
+    );
     final payroll = _payrollService.calculate(
       employee: employee,
       hours: hours,
@@ -204,6 +245,12 @@ class PayrollProvider extends ChangeNotifier {
     final index = _payrolls.indexWhere((payroll) => payroll.id == payrollId);
     if (index == -1) return null;
 
+    _validateAvailablePayPeriod(
+      employeeId: employee.id,
+      payPeriodStart: payPeriodStart,
+      payPeriodEnd: payPeriodEnd,
+      excludingPayrollId: payrollId,
+    );
     final original = _payrolls[index];
     final updated = _payrollService.calculate(
       id: original.id,
@@ -438,6 +485,44 @@ class PayrollProvider extends ChangeNotifier {
     }
   }
 
+  void _validateAvailablePayPeriod({
+    required String employeeId,
+    required DateTime payPeriodStart,
+    required DateTime payPeriodEnd,
+    String? excludingPayrollId,
+  }) {
+    final start = _dateOnly(payPeriodStart);
+    final end = _dateOnly(payPeriodEnd);
+    if (end.isBefore(start)) {
+      throw const PayrollPeriodConflictException(
+        'Pay period end date cannot be before the start date.',
+      );
+    }
+
+    final conflict = conflictingPayroll(
+      employeeId: employeeId,
+      payPeriodStart: start,
+      payPeriodEnd: end,
+      excludingPayrollId: excludingPayrollId,
+    );
+    if (conflict != null) {
+      throw PayrollPeriodConflictException(
+        'A pay slip already exists for this employee from '
+        '${_shortDate(conflict.payPeriodStart)} to '
+        '${_shortDate(conflict.payPeriodEnd)}.',
+      );
+    }
+  }
+
+  static DateTime _dateOnly(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  static String _shortDate(DateTime value) {
+    return '${value.year}-${value.month.toString().padLeft(2, '0')}-'
+        '${value.day.toString().padLeft(2, '0')}';
+  }
+
   RemittanceModel _remittanceFromPayroll(
     PayrollModel payroll,
     EmployeeModel employee,
@@ -463,4 +548,13 @@ class PayrollProvider extends ChangeNotifier {
       status: 'Unpaid',
     );
   }
+}
+
+class PayrollPeriodConflictException implements Exception {
+  const PayrollPeriodConflictException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

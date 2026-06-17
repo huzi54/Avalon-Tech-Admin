@@ -52,16 +52,50 @@ class OwnerDashboardScreen extends StatelessWidget {
       DashboardSection.employees => EmployeeInfoScreen(
         onCreateEmployee: () =>
             navigation.select(DashboardSection.createEmployee),
+        onOpenAttendance: (employee) => navigation.openAttendance(employee.id),
       ),
       DashboardSection.createEmployee => CreateEmployeeScreen(
         onBack: () => navigation.select(DashboardSection.employees),
         onSaved: (_) => navigation.select(DashboardSection.employees),
+      ),
+      DashboardSection.attendance => _AttendanceContent(
+        employeeId: navigation.attendanceEmployeeId,
+        onBack: () => navigation.select(DashboardSection.employees),
       ),
       DashboardSection.calculator => const SalaryCalculatorScreen(),
       DashboardSection.payroll => const PayrollSlipsScreen(),
       DashboardSection.remittance => const RemittanceScreen(),
       DashboardSection.settings => const _SettingsContent(),
     };
+  }
+}
+
+class _AttendanceContent extends StatelessWidget {
+  const _AttendanceContent({required this.employeeId, required this.onBack});
+
+  final String? employeeId;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final employee = employeeId == null
+        ? null
+        : context.watch<EmployeeProvider>().findById(employeeId!);
+    if (employee == null) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: 'Back to employees',
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back),
+          ),
+          title: const Text('Attendance Records'),
+        ),
+        body: const Center(child: Text('Employee record not found.')),
+      );
+    }
+
+    return AttendanceRecordsScreen(employee: employee, onBack: onBack);
   }
 }
 
@@ -422,7 +456,8 @@ class _Sidebar extends StatelessWidget {
               label: context.tr('employees'),
               selected:
                   selectedSection == DashboardSection.employees ||
-                  selectedSection == DashboardSection.createEmployee,
+                  selectedSection == DashboardSection.createEmployee ||
+                  selectedSection == DashboardSection.attendance,
               onTap: () => onSelected(DashboardSection.employees),
             ),
             _NavItem(

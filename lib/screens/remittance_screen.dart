@@ -11,6 +11,7 @@ import '../providers/payroll_provider.dart';
 import '../services/pdf_service.dart';
 import '../utils/date_time_helper.dart';
 import '../utils/remittance_filter.dart';
+import '../utils/record_date_sort.dart';
 
 class RemittanceArgs {
   const RemittanceArgs({this.statusFilter});
@@ -32,6 +33,7 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
   final Set<String> _selectedIds = {};
 
   String _statusFilter = 'All';
+  RecordDateSort _dateSort = RecordDateSort.oldestFirst;
   DateTime? _fromDate;
   DateTime? _toDate;
   bool _handledArgs = false;
@@ -56,12 +58,17 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
   }
 
   List<RemittanceModel> _filtered(List<RemittanceModel> records) {
-    return RemittanceFilter.apply(
+    final filtered = RemittanceFilter.apply(
       records: records,
       query: _searchController.text,
       status: _statusFilter,
       fromDate: _fromDate,
       toDate: _toDate,
+    );
+    return sortRecordsByDate(
+      records: filtered,
+      dateOf: (record) => record.createdAt,
+      order: _dateSort,
     );
   }
 
@@ -243,6 +250,29 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
                         onPressed: () => _pickDate(isFrom: false),
                       ),
                       const SizedBox(width: 10),
+                      SizedBox(
+                        width: 190,
+                        child: DropdownButtonFormField<RecordDateSort>(
+                          key: ValueKey(_dateSort),
+                          initialValue: _dateSort,
+                          decoration: const InputDecoration(
+                            labelText: 'Date Order',
+                            prefixIcon: Icon(Icons.sort),
+                          ),
+                          items: [
+                            for (final option in RecordDateSort.values)
+                              DropdownMenuItem(
+                                value: option,
+                                child: Text(option.label),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _dateSort = value);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
                       OutlinedButton.icon(
                         onPressed: () {
                           _searchController.clear();
@@ -250,72 +280,64 @@ class _RemittanceScreenState extends State<RemittanceScreen> {
                             _statusFilter = 'All';
                             _fromDate = null;
                             _toDate = null;
+                            _dateSort = RecordDateSort.oldestFirst;
                             _selectedIds.clear();
                           });
                         },
                         icon: const Icon(Icons.clear),
                         label: const Text('Clear'),
                       ),
-                      const SizedBox(width: 10),
-                      FilledButton.icon(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () => _export(selected),
-                        icon: const Icon(Icons.table_view_outlined),
-                        label: Text(
-                          selected.isEmpty
-                              ? 'Export to Excel'
-                              : 'Export to Excel (${selected.length})',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      FilledButton.icon(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () => _print(selected),
-                        icon: const Icon(Icons.print_outlined),
-                        label: Text(
-                          selected.isEmpty
-                              ? 'Print Selected'
-                              : 'Print Selected (${selected.length})',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      FilledButton.icon(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () => _updateSelectedStatus(
-                                provider: provider,
-                                selected: selected,
-                                status: 'Paid',
-                              ),
-                        icon: const Icon(Icons.check_circle_outline),
-                        label: Text(
-                          selected.isEmpty
-                              ? 'Mark Paid'
-                              : 'Mark Paid (${selected.length})',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      OutlinedButton.icon(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () => _updateSelectedStatus(
-                                provider: provider,
-                                selected: selected,
-                                status: 'Unpaid',
-                              ),
-                        icon: const Icon(Icons.cancel_outlined),
-                        label: Text(
-                          selected.isEmpty
-                              ? 'Mark Unpaid'
-                              : 'Mark Unpaid (${selected.length})',
-                        ),
-                      ),
                     ],
                   ),
                 ),
               ),
+              if (selected.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        Text(
+                          '${selected.length} selected',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: () => _export(selected),
+                          icon: const Icon(Icons.table_view_outlined),
+                          label: Text('Export to Excel (${selected.length})'),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton.icon(
+                          onPressed: () => _print(selected),
+                          icon: const Icon(Icons.print_outlined),
+                          label: Text('Print Selected (${selected.length})'),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton.icon(
+                          onPressed: () => _updateSelectedStatus(
+                            provider: provider,
+                            selected: selected,
+                            status: 'Paid',
+                          ),
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: Text('Mark Paid (${selected.length})'),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          onPressed: () => _updateSelectedStatus(
+                            provider: provider,
+                            selected: selected,
+                            status: 'Unpaid',
+                          ),
+                          icon: const Icon(Icons.cancel_outlined),
+                          label: Text('Mark Unpaid (${selected.length})'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Container(
@@ -457,7 +479,7 @@ class _RemittanceTableState extends State<_RemittanceTable> {
             controller: _horizontalController,
             scrollDirection: Axis.horizontal,
             child: SizedBox(
-              width: 2100,
+              width: 2240,
               height: constraints.maxHeight,
               child: Scrollbar(
                 controller: _verticalController,
@@ -475,6 +497,7 @@ class _RemittanceTableState extends State<_RemittanceTable> {
                       DataColumn(label: Text('Action')),
                       DataColumn(label: Text('Remittance Status')),
                       DataColumn(label: Text('Employee')),
+                      DataColumn(label: Text('Created Date')),
                       DataColumn(label: Text('Pay Frequency')),
                       DataColumn(label: Text('Period')),
                       DataColumn(label: Text('Gross Pay')),
@@ -543,6 +566,9 @@ class _RemittanceTableState extends State<_RemittanceTable> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                            ),
+                            DataCell(
+                              Text(DateTimeHelper.formatDate(record.createdAt)),
                             ),
                             DataCell(Text(record.payFrequency)),
                             DataCell(

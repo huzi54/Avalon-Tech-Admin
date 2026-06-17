@@ -76,7 +76,10 @@ class EmployeeProvider extends ChangeNotifier {
         final hours = report.entries[index].workingHours;
         if (hours <= 0) continue;
         totalHours += hours;
-        regularIncome += hours * employee.hourlyRateAt(date);
+        final rate =
+            report.entries[index].hourlyRateOverride ??
+            employee.hourlyRateAt(date);
+        regularIncome += hours * rate;
       }
     }
 
@@ -204,6 +207,39 @@ class EmployeeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> upsertDailyEntry({
+    required String employeeId,
+    required DateTime date,
+    required DailyWorkEntry entry,
+  }) async {
+    final weekStart = _startOfWeek(date);
+    final reports = _weeklyReports.putIfAbsent(employeeId, () => []);
+    var reportIndex = reports.indexWhere(
+      (report) => _sameDate(report.weekStart, weekStart),
+    );
+
+    if (reportIndex == -1) {
+      reports.add(
+        WeeklyWorkReportModel(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          employeeId: employeeId,
+          weekStart: weekStart,
+          entries: _emptyEntries(),
+          createdAt: DateTime.now(),
+        ),
+      );
+      reportIndex = reports.length - 1;
+    }
+
+    final report = reports[reportIndex];
+    final entries = [...report.entries];
+    entries[date.weekday - DateTime.monday] = entry;
+    final updated = report.copyWith(entries: entries);
+    await _run(() => _firebaseService.saveWeeklyReport(updated));
+    reports[reportIndex] = updated;
+    notifyListeners();
+  }
+
   Future<bool> recordDailyPunch({
     required String employeeId,
     required DateTime dateTime,
@@ -249,6 +285,9 @@ class EmployeeProvider extends ChangeNotifier {
       attendanceNote: note == null || note.isEmpty
           ? original.attendanceNote
           : note,
+      attendanceStatus: 'Present',
+      attendanceReason: null,
+      hourlyRateOverride: original.hourlyRateOverride,
     );
 
     final updated = report.copyWith(entries: entries);
@@ -289,7 +328,10 @@ class EmployeeProvider extends ChangeNotifier {
       'Saturday',
       'Sunday',
     ];
-    return [for (final day in days) DailyWorkEntry(dayName: day)];
+    return [
+      for (final day in days)
+        DailyWorkEntry(dayName: day, attendanceStatus: 'Not Set'),
+    ];
   }
 
   static DateTime _startOfWeek(DateTime value) {

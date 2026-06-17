@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/payroll_model.dart';
 import '../providers/payroll_provider.dart';
 import '../utils/date_time_helper.dart';
+import '../utils/record_date_sort.dart';
 import '../widgets/payroll_table.dart';
 import 'pay_slip_preview_screen.dart';
 
@@ -27,6 +28,7 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
 
   String _statusFilter = 'All';
   String _dateFilter = 'All';
+  RecordDateSort _dateSort = RecordDateSort.oldestFirst;
   bool _handledArgs = false;
 
   static const _statusOptions = ['All', 'Paid', 'Unpaid'];
@@ -60,7 +62,7 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
     final query = _searchController.text.trim().toLowerCase();
     final now = DateTime.now();
 
-    return payrolls.where((payroll) {
+    final filtered = payrolls.where((payroll) {
       final matchesSearch =
           query.isEmpty ||
           payroll.employeeName.toLowerCase().contains(query) ||
@@ -85,7 +87,12 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
       };
 
       return matchesSearch && matchesStatus && matchesDate;
-    }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }).toList();
+    return sortRecordsByDate(
+      records: filtered,
+      dateOf: (payroll) => payroll.createdAt,
+      order: _dateSort,
+    );
   }
 
   void _openPreview(PayrollModel payroll) {
@@ -165,12 +172,35 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
                         },
                       ),
                     ),
+                    SizedBox(
+                      width: 205,
+                      child: DropdownButtonFormField<RecordDateSort>(
+                        key: ValueKey(_dateSort),
+                        initialValue: _dateSort,
+                        decoration: const InputDecoration(
+                          labelText: 'Date Order',
+                          prefixIcon: Icon(Icons.sort),
+                        ),
+                        items: [
+                          for (final option in RecordDateSort.values)
+                            DropdownMenuItem(
+                              value: option,
+                              child: Text(option.label),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() => _dateSort = value);
+                        },
+                      ),
+                    ),
                     OutlinedButton.icon(
                       onPressed: () {
                         _searchController.clear();
                         setState(() {
                           _statusFilter = 'All';
                           _dateFilter = 'All';
+                          _dateSort = RecordDateSort.oldestFirst;
                         });
                       },
                       icon: const Icon(Icons.clear),

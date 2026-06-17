@@ -4,27 +4,46 @@ class DailyWorkEntry {
     this.checkInMinutes,
     this.checkOutMinutes,
     this.attendanceNote,
+    this.attendanceStatus = 'Present',
+    this.attendanceReason,
+    this.hourlyRateOverride,
   });
 
   final String dayName;
   final int? checkInMinutes;
   final int? checkOutMinutes;
   final String? attendanceNote;
+  final String attendanceStatus;
+  final String? attendanceReason;
+  final double? hourlyRateOverride;
 
   DailyWorkEntry copyWith({
     int? checkInMinutes,
     int? checkOutMinutes,
     String? attendanceNote,
+    String? attendanceStatus,
+    String? attendanceReason,
+    double? hourlyRateOverride,
+    bool clearAttendanceReason = false,
+    bool clearHourlyRateOverride = false,
   }) {
     return DailyWorkEntry(
       dayName: dayName,
       checkInMinutes: checkInMinutes ?? this.checkInMinutes,
       checkOutMinutes: checkOutMinutes ?? this.checkOutMinutes,
       attendanceNote: attendanceNote ?? this.attendanceNote,
+      attendanceStatus: attendanceStatus ?? this.attendanceStatus,
+      attendanceReason: clearAttendanceReason
+          ? null
+          : attendanceReason ?? this.attendanceReason,
+      hourlyRateOverride: clearHourlyRateOverride
+          ? null
+          : hourlyRateOverride ?? this.hourlyRateOverride,
     );
   }
 
   double get workingHours {
+    if (attendanceStatus != 'Present') return 0;
     final grossMinutes = _grossMinutes;
     if (grossMinutes == 0) return 0;
     return (grossMinutes - breakMinutes).clamp(0, double.infinity) / 60;
@@ -32,7 +51,13 @@ class DailyWorkEntry {
 
   double get grossWorkingHours => _grossMinutes / 60;
 
-  int get breakMinutes => _grossMinutes > 0 ? 30 : 0;
+  int get breakMinutes {
+    if (attendanceStatus != 'Present') return 0;
+    final grossHours = grossWorkingHours;
+    if (grossHours >= 8) return 30;
+    if (grossHours >= 5) return 15;
+    return 0;
+  }
 
   int get _grossMinutes {
     final start = checkInMinutes;
@@ -48,6 +73,9 @@ class DailyWorkEntry {
       checkInMinutes: (map['checkInMinutes'] as num?)?.toInt(),
       checkOutMinutes: (map['checkOutMinutes'] as num?)?.toInt(),
       attendanceNote: map['attendanceNote'] as String?,
+      attendanceStatus: map['attendanceStatus'] as String? ?? 'Present',
+      attendanceReason: map['attendanceReason'] as String?,
+      hourlyRateOverride: (map['hourlyRateOverride'] as num?)?.toDouble(),
     );
   }
 
@@ -57,6 +85,9 @@ class DailyWorkEntry {
       'checkInMinutes': checkInMinutes,
       'checkOutMinutes': checkOutMinutes,
       'attendanceNote': attendanceNote,
+      'attendanceStatus': attendanceStatus,
+      'attendanceReason': attendanceReason,
+      'hourlyRateOverride': hourlyRateOverride,
     };
   }
 }

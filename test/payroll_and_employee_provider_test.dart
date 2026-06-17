@@ -89,6 +89,74 @@ void main() {
     },
   );
 
+  test('payroll periods cannot overlap for the same employee', () async {
+    const employee = EmployeeModel(
+      id: 'EMP-1',
+      name: 'Taylor',
+      email: 'taylor@example.com',
+      role: 'Employee',
+      hourlyRate: 25,
+    );
+    const otherEmployee = EmployeeModel(
+      id: 'EMP-2',
+      name: 'Jordan',
+      email: 'jordan@example.com',
+      role: 'Employee',
+      hourlyRate: 25,
+    );
+    final existing = const PayrollService().calculate(
+      id: 'PAY-1',
+      employee: employee,
+      hours: 75,
+      payPeriodStart: DateTime(2026, 6),
+      payPeriodEnd: DateTime(2026, 6, 14),
+    );
+    final firebase = _FakeFirebaseService(payrolls: [existing]);
+    final provider = PayrollProvider(firebase);
+    await provider.loadPayrolls();
+
+    expect(
+      provider.isPayrollDateLocked(
+        employeeId: employee.id,
+        date: DateTime(2026, 6, 1),
+      ),
+      isTrue,
+    );
+    expect(
+      provider.isPayrollDateLocked(
+        employeeId: employee.id,
+        date: DateTime(2026, 6, 15),
+      ),
+      isFalse,
+    );
+    await expectLater(
+      provider.calculateAndSave(
+        employee: employee,
+        hours: 40,
+        payPeriodStart: DateTime(2026, 6, 10),
+        payPeriodEnd: DateTime(2026, 6, 20),
+      ),
+      throwsA(isA<PayrollPeriodConflictException>()),
+    );
+
+    final otherPayroll = await provider.calculateAndSave(
+      employee: otherEmployee,
+      hours: 40,
+      payPeriodStart: DateTime(2026, 6, 10),
+      payPeriodEnd: DateTime(2026, 6, 20),
+    );
+    expect(otherPayroll.employeeId, otherEmployee.id);
+    expect(
+      provider.conflictingPayroll(
+        employeeId: employee.id,
+        payPeriodStart: existing.payPeriodStart,
+        payPeriodEnd: existing.payPeriodEnd,
+        excludingPayrollId: existing.id,
+      ),
+      isNull,
+    );
+  });
+
   test(
     'attendance summary uses date-range hours and historical daily rates',
     () async {
@@ -120,6 +188,7 @@ void main() {
             dayName: 'Tuesday',
             checkInMinutes: 9 * 60,
             checkOutMinutes: 17 * 60,
+            hourlyRateOverride: 30,
           ),
           DailyWorkEntry(dayName: 'Wednesday'),
           DailyWorkEntry(dayName: 'Thursday'),
@@ -143,8 +212,8 @@ void main() {
       );
 
       expect(summary.totalHours, 15);
-      expect(summary.regularIncome, 337.5);
-      expect(summary.effectiveHourlyRate, 22.5);
+      expect(summary.regularIncome, 375);
+      expect(summary.effectiveHourlyRate, 25);
     },
   );
 
@@ -165,6 +234,39 @@ void main() {
     expect(provider.remittances.last.paidVia, isNull);
     expect(firebase.savedRemittances.map((item) => item.id), ['REM-2']);
   });
+
+  test('owner can create a missing calendar day status record', () async {
+    const employee = EmployeeModel(
+      id: 'EMP-1',
+      name: 'Taylor',
+      email: 'taylor@example.com',
+      role: 'Employee',
+      hourlyRate: 25,
+    );
+    final firebase = _FakeFirebaseService(employees: [employee]);
+    final provider = EmployeeProvider(firebase);
+    await provider.loadEmployees();
+
+    await provider.upsertDailyEntry(
+      employeeId: employee.id,
+      date: DateTime(2026, 6, 17),
+      entry: const DailyWorkEntry(
+        dayName: 'Wednesday',
+        attendanceStatus: 'Absent',
+        attendanceReason: 'Sick',
+        hourlyRateOverride: 24,
+      ),
+    );
+
+    final saved = provider.dailyEntryForDate(
+      employeeId: employee.id,
+      date: DateTime(2026, 6, 17),
+    );
+    expect(saved?.attendanceStatus, 'Absent');
+    expect(saved?.attendanceReason, 'Sick');
+    expect(saved?.hourlyRateOverride, 24);
+    expect(firebase.savedWeeklyReport, isNotNull);
+  });
 }
 
 class _FakeFirebaseService extends FirebaseService {
@@ -183,6 +285,7 @@ class _FakeFirebaseService extends FirebaseService {
   EmployeeModel? savedEmployee;
   PayrollModel? savedPayroll;
   RemittanceModel? savedRemittance;
+  WeeklyWorkReportModel? savedWeeklyReport;
   final List<RemittanceModel> savedRemittances = [];
 
   @override
@@ -213,6 +316,11 @@ class _FakeFirebaseService extends FirebaseService {
   Future<void> saveRemittance(RemittanceModel remittance) async {
     savedRemittance = remittance;
     savedRemittances.add(remittance);
+  }
+
+  @override
+  Future<void> saveWeeklyReport(WeeklyWorkReportModel report) async {
+    savedWeeklyReport = report;
   }
 }
 
