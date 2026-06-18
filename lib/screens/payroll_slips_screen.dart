@@ -17,9 +17,12 @@ class PayrollSlipsArgs {
 }
 
 class PayrollSlipsScreen extends StatefulWidget {
-  const PayrollSlipsScreen({super.key});
+  const PayrollSlipsScreen({this.onOpenPreview, this.onCreateSlip, super.key});
 
   static const routeName = '/payroll-slips';
+
+  final ValueChanged<PayrollModel>? onOpenPreview;
+  final VoidCallback? onCreateSlip;
 
   @override
   State<PayrollSlipsScreen> createState() => _PayrollSlipsScreenState();
@@ -60,6 +63,11 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
 
   void _openPreview(PayrollModel payroll) {
     context.read<PayrollProvider>().preview(payroll);
+    final onOpenPreview = widget.onOpenPreview;
+    if (onOpenPreview != null) {
+      onOpenPreview(payroll);
+      return;
+    }
     context.push(AppRoutes.paySlipPreview(payroll.id));
   }
 
@@ -86,6 +94,13 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
                     runSpacing: 12,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      FilledButton.icon(
+                        onPressed:
+                            widget.onCreateSlip ??
+                            () => context.push(AppRoutes.salaryCalculator),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add New Slip'),
+                      ),
                       SizedBox(
                         width: 360,
                         child: TextField(

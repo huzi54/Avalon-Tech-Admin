@@ -15,9 +15,16 @@ import '../utils/date_time_helper.dart';
 import 'salary_calculator_screen.dart';
 
 class PaySlipPreviewScreen extends StatefulWidget {
-  const PaySlipPreviewScreen({required this.payrollId, super.key});
+  const PaySlipPreviewScreen({
+    required this.payrollId,
+    this.onBack,
+    this.onEdit,
+    super.key,
+  });
 
   final String payrollId;
+  final VoidCallback? onBack;
+  final ValueChanged<PayrollModel>? onEdit;
 
   @override
   State<PaySlipPreviewScreen> createState() => _PaySlipPreviewScreenState();
@@ -64,6 +71,13 @@ class _PaySlipPreviewScreenState extends State<PaySlipPreviewScreen> {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
+          leading: widget.onBack == null
+              ? null
+              : IconButton(
+                  tooltip: 'Back to payroll',
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back),
+                ),
           title: Text('Pay Slip: ${payroll.employeeName}'),
           actions: [
             TextButton.icon(
@@ -105,6 +119,11 @@ class _PaySlipPreviewScreenState extends State<PaySlipPreviewScreen> {
   }
 
   void _openEdit(PayrollModel payroll) {
+    final onEdit = widget.onEdit;
+    if (onEdit != null) {
+      onEdit(payroll);
+      return;
+    }
     context.push(
       AppRoutes.salaryCalculator,
       extra: SalaryCalculatorArgs(

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_config.dart';
 import '../app_router.dart';
 import '../core/localization/localization_service.dart';
+import '../models/employee_model.dart';
 import '../models/payroll_model.dart';
 import '../models/remittance_model.dart';
 import '../providers/app_settings_provider.dart';
@@ -15,6 +16,7 @@ import '../providers/payroll_provider.dart';
 import '../utils/date_time_helper.dart';
 import 'create_employee_screen.dart';
 import 'employee_info_screen.dart';
+import 'pay_slip_preview_screen.dart';
 import 'payroll_slips_screen.dart';
 import 'remittance_screen.dart';
 import 'salary_calculator_screen.dart';
@@ -48,6 +50,8 @@ class OwnerDashboardScreen extends StatelessWidget {
     return switch (navigation.selectedSection) {
       DashboardSection.dashboard => _DashboardHome(
         onSectionSelected: navigation.select,
+        onOpenPayrollPreview: (payroll) =>
+            navigation.openPayrollPreview(payroll.id),
       ),
       DashboardSection.employees => EmployeeInfoScreen(
         onCreateEmployee: () =>
@@ -58,15 +62,294 @@ class OwnerDashboardScreen extends StatelessWidget {
         onBack: () => navigation.select(DashboardSection.employees),
         onSaved: (_) => navigation.select(DashboardSection.employees),
       ),
+      DashboardSection.records => _RecordsContent(navigation: navigation),
       DashboardSection.attendance => _AttendanceContent(
         employeeId: navigation.attendanceEmployeeId,
-        onBack: () => navigation.select(DashboardSection.employees),
+        onBack: () => navigation.select(DashboardSection.records),
       ),
-      DashboardSection.calculator => const SalaryCalculatorScreen(),
-      DashboardSection.payroll => const PayrollSlipsScreen(),
+      DashboardSection.calculator => SalaryCalculatorScreen(
+        initialArgs: navigation.calculatorEmployeeId == null
+            ? null
+            : SalaryCalculatorArgs(
+                employeeId: navigation.calculatorEmployeeId!,
+                payrollId: navigation.calculatorPayrollId,
+              ),
+      ),
+      DashboardSection.payroll => PayrollSlipsScreen(
+        onCreateSlip: () => navigation.openCalculator(),
+        onOpenPreview: (payroll) => navigation.openPayrollPreview(payroll.id),
+      ),
+      DashboardSection.payrollPreview => _PayrollPreviewContent(
+        payrollId: navigation.payrollPreviewId,
+        onBack: () => navigation.select(DashboardSection.payroll),
+        onEdit: (payroll) => navigation.openCalculator(
+          employeeId: payroll.employeeId,
+          payrollId: payroll.id,
+        ),
+      ),
       DashboardSection.remittance => const RemittanceScreen(),
       DashboardSection.settings => const _SettingsContent(),
     };
+  }
+}
+
+class _RecordsContent extends StatelessWidget {
+  const _RecordsContent({required this.navigation});
+
+  final DashboardNavigationProvider navigation;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Records')),
+      body: ListView(
+        padding: const EdgeInsets.all(28),
+        children: [
+          Text(
+            'Open records',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 860;
+              final payroll = _RecordActionPanel(
+                title: 'Payroll',
+                subtitle: 'View all slips or create a new payroll slip.',
+                icon: Icons.receipt_long_outlined,
+                color: const Color(0xFF16A34A),
+                primaryLabel: 'All Slips',
+                primaryAction: () =>
+                    navigation.select(DashboardSection.payroll),
+                secondaryLabel: 'Add New Slip',
+                secondaryAction: () => navigation.openCalculator(),
+              );
+              final remittance = _RecordActionPanel(
+                title: 'Remittance',
+                subtitle: 'Search, filter, print, and update remittances.',
+                icon: Icons.account_balance_outlined,
+                color: const Color(0xFF2563EB),
+                primaryLabel: 'Open Remittance',
+                primaryAction: () =>
+                    navigation.select(DashboardSection.remittance),
+              );
+              final attendance = _EmployeeAttendanceRecordPanel(
+                onSelected: (employee) =>
+                    navigation.openAttendance(employee.id),
+              );
+
+              if (compact) {
+                return Column(
+                  children: [
+                    payroll,
+                    const SizedBox(height: 16),
+                    remittance,
+                    const SizedBox(height: 16),
+                    attendance,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: payroll),
+                  const SizedBox(width: 16),
+                  Expanded(child: remittance),
+                  const SizedBox(width: 16),
+                  Expanded(child: attendance),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PayrollPreviewContent extends StatelessWidget {
+  const _PayrollPreviewContent({
+    required this.payrollId,
+    required this.onBack,
+    required this.onEdit,
+  });
+
+  final String? payrollId;
+  final VoidCallback onBack;
+  final ValueChanged<PayrollModel> onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (payrollId == null) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: 'Back to payroll',
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back),
+          ),
+          title: const Text('Pay Slip Preview'),
+        ),
+        body: const Center(child: Text('Payroll record not found.')),
+      );
+    }
+
+    return PaySlipPreviewScreen(
+      payrollId: payrollId!,
+      onBack: onBack,
+      onEdit: onEdit,
+    );
+  }
+}
+
+class _RecordActionPanel extends StatelessWidget {
+  const _RecordActionPanel({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.primaryLabel,
+    required this.primaryAction,
+    this.secondaryLabel,
+    this.secondaryAction,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final String primaryLabel;
+  final VoidCallback primaryAction;
+  final String? secondaryLabel;
+  final VoidCallback? secondaryAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      child: SizedBox(
+        height: 210,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 30),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF475569),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: primaryAction,
+                    child: Text(primaryLabel),
+                  ),
+                ),
+                if (secondaryLabel != null && secondaryAction != null) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: secondaryAction,
+                      child: Text(secondaryLabel!),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmployeeAttendanceRecordPanel extends StatelessWidget {
+  const _EmployeeAttendanceRecordPanel({required this.onSelected});
+
+  final ValueChanged<EmployeeModel> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Panel(
+      child: SizedBox(
+        height: 210,
+        child: Consumer<EmployeeProvider>(
+          builder: (context, provider, _) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9333EA).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.fact_check_outlined,
+                    color: Color(0xFF9333EA),
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Employee Attendance Record',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Select an employee to view the complete attendance record.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFF475569),
+                  ),
+                ),
+                const Spacer(),
+                DropdownButtonFormField<EmployeeModel>(
+                  decoration: const InputDecoration(
+                    labelText: 'Select Employee',
+                    prefixIcon: Icon(Icons.person_search_outlined),
+                  ),
+                  items: [
+                    for (final employee in provider.employees)
+                      DropdownMenuItem(
+                        value: employee,
+                        child: Text('${employee.name} (${employee.id})'),
+                      ),
+                  ],
+                  onChanged: (employee) {
+                    if (employee != null) onSelected(employee);
+                  },
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
   }
 }
 
@@ -100,9 +383,13 @@ class _AttendanceContent extends StatelessWidget {
 }
 
 class _DashboardHome extends StatelessWidget {
-  const _DashboardHome({required this.onSectionSelected});
+  const _DashboardHome({
+    required this.onSectionSelected,
+    required this.onOpenPayrollPreview,
+  });
 
   final ValueChanged<DashboardSection> onSectionSelected;
+  final ValueChanged<PayrollModel> onOpenPayrollPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -168,12 +455,13 @@ class _DashboardHome extends StatelessWidget {
                       const SizedBox(width: 16),
                       Expanded(
                         child: _ActionCard(
-                          title: 'Payroll',
-                          subtitle: 'Calculate, manage and view payrolls',
-                          icon: Icons.calculate_rounded,
+                          title: 'Records',
+                          subtitle:
+                              'Payroll, remittance and attendance records',
+                          icon: Icons.folder_copy_rounded,
                           color: const Color(0xFF16A34A),
                           onTap: () =>
-                              onSectionSelected(DashboardSection.calculator),
+                              onSectionSelected(DashboardSection.records),
                         ),
                       ),
                     ],
@@ -262,6 +550,7 @@ class _DashboardHome extends StatelessWidget {
                     payrolls: payrolls.take(5).toList(),
                     onViewAll: () =>
                         onSectionSelected(DashboardSection.payroll),
+                    onOpenPreview: onOpenPayrollPreview,
                   ),
                 ],
               ),
@@ -452,23 +741,20 @@ class _Sidebar extends StatelessWidget {
               label: context.tr('employees'),
               selected:
                   selectedSection == DashboardSection.employees ||
-                  selectedSection == DashboardSection.createEmployee ||
-                  selectedSection == DashboardSection.attendance,
+                  selectedSection == DashboardSection.createEmployee,
               onTap: () => onSelected(DashboardSection.employees),
             ),
             _NavItem(
-              icon: Icons.receipt_long_outlined,
-              label: context.tr('payroll'),
+              icon: Icons.folder_copy_outlined,
+              label: 'Records',
               selected:
+                  selectedSection == DashboardSection.records ||
                   selectedSection == DashboardSection.payroll ||
+                  selectedSection == DashboardSection.payrollPreview ||
+                  selectedSection == DashboardSection.remittance ||
+                  selectedSection == DashboardSection.attendance ||
                   selectedSection == DashboardSection.calculator,
-              onTap: () => onSelected(DashboardSection.payroll),
-            ),
-            _NavItem(
-              icon: Icons.account_balance_outlined,
-              label: context.tr('remittance'),
-              selected: selectedSection == DashboardSection.remittance,
-              onTap: () => onSelected(DashboardSection.remittance),
+              onTap: () => onSelected(DashboardSection.records),
             ),
             _NavItem(
               icon: Icons.settings_outlined,
@@ -848,10 +1134,15 @@ class _RemittancePanel extends StatelessWidget {
 }
 
 class _PayrollPanel extends StatelessWidget {
-  const _PayrollPanel({required this.payrolls, required this.onViewAll});
+  const _PayrollPanel({
+    required this.payrolls,
+    required this.onViewAll,
+    required this.onOpenPreview,
+  });
 
   final List<PayrollModel> payrolls;
   final VoidCallback onViewAll;
+  final ValueChanged<PayrollModel> onOpenPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -884,7 +1175,7 @@ class _PayrollPanel extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         context.read<PayrollProvider>().preview(payroll);
-                        context.push(AppRoutes.paySlipPreview(payroll.id));
+                        onOpenPreview(payroll);
                       },
                       icon: const Icon(Icons.description_outlined, size: 18),
                       label: const Text('PDF Preview'),

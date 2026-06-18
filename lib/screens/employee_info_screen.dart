@@ -1458,6 +1458,14 @@ class _AttendanceRecordsScreenState extends State<AttendanceRecordsScreen> {
     });
   }
 
+  void _clearDateFilter() {
+    setState(() {
+      _viewMode = _AttendanceViewMode.weekly;
+      _anchorDate = DateTime.now();
+      _customRange = null;
+    });
+  }
+
   Future<void> _unlockEditing() async {
     if (_isEditEnabled) {
       setState(() => _isEditEnabled = false);
@@ -1671,6 +1679,11 @@ class _AttendanceRecordsScreenState extends State<AttendanceRecordsScreen> {
                             '${DateTimeHelper.formatDate(_periodStart)} - '
                             '${DateTimeHelper.formatDate(_periodEnd)}',
                           ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _clearDateFilter,
+                          icon: const Icon(Icons.clear),
+                          label: const Text('Clear Date Filter'),
                         ),
                         IconButton(
                           tooltip: 'Next period',
