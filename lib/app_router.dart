@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import 'screens/auth/register_screen.dart';
 import 'screens/create_employee_screen.dart';
 import 'screens/employee/history_screen.dart';
 import 'screens/employee_info_screen.dart';
@@ -121,10 +120,10 @@ GoRouter createAppRouter() {
           ),
         ),
       ),
-      GoRoute(
-        path: AppRoutes.register,
-        pageBuilder: (context, state) => _page(state, const RegisterScreen()),
-      ),
+      // GoRoute(
+      //   path: AppRoutes.register,
+      //   pageBuilder: (context, state) => _page(state, const RegisterScreen()),
+      // ),
       GoRoute(
         path: AppRoutes.attendanceHistory,
         pageBuilder: (context, state) => _page(state, const HistoryScreen()),
